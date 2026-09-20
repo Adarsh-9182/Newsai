@@ -4,7 +4,11 @@
  *   npm run preview      → http://localhost:3000
  *
  * Writes clearly fictional sample stories to .preview-data/ (git-ignored),
- * renders the real site from them, and serves public/ locally. It never
+ * renders the real site from them, and serves public/ locally together with
+ * the real /api handler on an in-memory database — so sign-up, sign-in and
+ * saved stories all work with no setup, and vanish when you stop the server.
+ * It applies the same security headers as vercel.json, so a script the
+ * Content Security Policy would block in production fails here too. It never
  * touches data/, which is the committed archive that gets published. The
  * names below are invented on purpose so a preview page can never be
  * mistaken for a report about a real project.
@@ -66,19 +70,47 @@ const days = [
 ];
 for (const d of days) writeFileSync(join(dir, `${d.date}.json`), JSON.stringify(d, null, 2));
 
-const env = { ...process.env, NEWSAI_DATA_DIR: dir, NEWSAI_SITE_URL: "http://localhost:3000" };
+const env = { ...process.env, NEWSAI_DATA_DIR: dir, NEWSAI_SITE_URL: `http://localhost:${process.env.PORT ?? 3000}` };
 const built = spawnSync("npm", ["run", "build"], { cwd: root, stdio: "ignore" });
 if (built.status !== 0) { console.error("build failed — run `npm run typecheck`"); process.exit(1); }
 const r = spawnSync("node", ["dist/render.js"], { cwd: root, env, stdio: "inherit" });
 if (r.status !== 0) process.exit(1);
 
-const TYPES = { ".html": "text/html; charset=utf-8", ".xml": "application/xml", ".txt": "text/plain" };
+const TYPES = {
+  ".html": "text/html; charset=utf-8", ".xml": "application/xml", ".txt": "text/plain",
+  ".js": "text/javascript; charset=utf-8", ".json": "application/json",
+};
 const pub = join(root, "public");
-createServer((req, res) => {
-  let p = normalize(decodeURIComponent(new URL(req.url, "http://x").pathname)).replace(/^(\.\.[/\\])+/, "");
+
+// Same headers production sends, read from vercel.json so they cannot drift.
+const vercel = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8"));
+const secHeaders = Object.fromEntries(
+  vercel.headers.flatMap((h) => h.source === "/(.*)" ? h.headers.map((x) => [x.key, x.value]) : []),
+);
+
+const { handle } = await import(join(root, "dist/server/app.js"));
+const { memoryStore } = await import(join(root, "dist/server/store/memory.js"));
+const store = memoryStore();
+
+const PORT = Number(process.env.PORT ?? 3000);
+createServer(async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.pathname.startsWith("/api/")) {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    const hasBody = !["GET", "HEAD"].includes(req.method);
+    const r = await handle(new Request(url, { method: req.method, headers: req.headers, body: hasBody ? Buffer.concat(chunks) : undefined }), store);
+    const headers = {};
+    r.headers.forEach((v, k) => { headers[k] = v; });
+    const cookie = r.headers.getSetCookie?.();
+    if (cookie?.length) headers["set-cookie"] = cookie;
+    res.writeHead(r.status, headers).end(Buffer.from(await r.arrayBuffer()));
+    return;
+  }
+  let p = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, "");
   let file = join(pub, p);
   if (!file.startsWith(pub)) { res.writeHead(403).end(); return; }
   if (p.endsWith("/") || !extname(p)) file = join(file, "index.html");
-  if (!existsSync(file)) { res.writeHead(404, { "content-type": TYPES[".html"] }).end(readFileSync(join(pub, "404.html"))); return; }
-  res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" }).end(readFileSync(file));
-}).listen(3000, () => console.log("\n  preview → http://localhost:3000   (ctrl+c to stop)\n  sample data only — nothing here is real news\n"));
+  if (!existsSync(file)) { res.writeHead(404, { ...secHeaders, "content-type": TYPES[".html"] }).end(readFileSync(join(pub, "404.html"))); return; }
+  res.writeHead(200, { ...secHeaders, "content-type": TYPES[extname(file)] ?? "application/octet-stream" }).end(readFileSync(file));
+}).listen(PORT, () => console.log(`\n  preview → http://localhost:${PORT}   (ctrl+c to stop)\n  sample data + in-memory accounts — nothing here is real\n`));

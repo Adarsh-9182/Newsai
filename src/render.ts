@@ -6,16 +6,17 @@
  * pure function of `data/`: delete `public/`, run this, get the same site.
  * That is what makes a bad day a `git revert` instead of a repair job.
  *
- * No client-side JavaScript anywhere. The filters are links to real pages,
- * which also makes every tag, day and story an indexable, shareable URL —
- * the property a news site's traffic actually depends on.
+ * Reading needs no JavaScript: filters are links to real pages, which makes
+ * every tag, day and story an indexable, shareable URL — the property a news
+ * site's traffic actually depends on. app.js only adds accounts, search and polish.
  */
 
 import { writeFile, mkdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Digest } from "./types.js";
 import { readArchive } from "./archive.js";
-import { home, storyPage, tagPage, archivePage, dayPage, aboutPage, notFoundPage, rss, sitemap, ALL_TAGS } from "./ui/pages.js";
+import { home, storyPage, tagPage, archivePage, dayPage, aboutPage, notFoundPage, loginPage, signupPage, accountPage, searchIndex, rss, sitemap, ALL_TAGS } from "./ui/pages.js";
+import { APP_JS, THEME_JS } from "./ui/client.js";
 import { SITE_URL } from "./ui/layout.js";
 
 const PUBLIC_DIR = new URL("../public/", import.meta.url).pathname;
@@ -45,6 +46,13 @@ export async function render(): Promise<number> {
   await write("archive/index.html", archivePage(all));
   await write("about/index.html", aboutPage());
   await write("404.html", notFoundPage());
+  // Account pages are shells; the script fills them in for whoever is signed in.
+  await write("login/index.html", loginPage());
+  await write("signup/index.html", signupPage());
+  await write("account/index.html", accountPage());
+  await write("app.js", APP_JS);
+  await write("theme.js", THEME_JS);
+  await write("search.json", JSON.stringify(searchIndex(all)));
   await write("feed.xml", rss(all));
   await write("sitemap.xml", sitemap(all));
   await write("robots.txt", `User-agent: *\nAllow: /\nSitemap: ${SITE_URL}/sitemap.xml\n`);

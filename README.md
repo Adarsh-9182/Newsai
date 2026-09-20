@@ -90,7 +90,8 @@ open public/index.html
 | `npm run digest` | Fetch, dedupe, summarise, write `data/<today>.json` |
 | `npm run render` | Rebuild `public/index.html` from the archive |
 | `npm run daily`  | Both |
-| `npm run preview` | Render fictional sample data and serve it on :3000 |
+| `npm run preview` | Render fictional sample data and serve it, with a working `/api` on an in-memory database, on :3000 |
+| `npm test` | API tests, run against the in-memory store **and** real Postgres SQL (PGlite) |
 | `npm run typecheck` | `tsc --noEmit` |
 
 ## Deploying
@@ -101,6 +102,33 @@ open public/index.html
 4. Point `newsai.co.in` at Vercel and add it under the project's Domains.
 5. Run the workflow once by hand (**Actions → daily digest → Run workflow**)
    to check it end to end before trusting the schedule.
+
+## Accounts and the database
+
+The site is static; accounts are a thin API (`api/index.ts` → `src/server/app.ts`)
+that runs as one Vercel function. It handles sign-up / sign-in, saved stories,
+followed topics and the email list. Everything it stores goes through the
+`Store` interface (`src/server/types.ts`), so the database is a late decision:
+
+- **No `DATABASE_URL`, running locally** — in-memory, so `npm run preview` just works.
+- **No `DATABASE_URL`, on Vercel** — the API answers `503 no_database`. It never
+  falls back to memory in production, which would lose every account on a cold start.
+- **`DATABASE_URL` set** — Postgres. Neon and Supabase are both plain Postgres and
+  run the same code; the tables are created on first connect (`src/server/store/schema.ts`,
+  safe to re-run, with row-level security on so Supabase's public API key sees nothing).
+
+To connect: create the project, copy the connection string into `DATABASE_URL`
+(Vercel → Settings → Environment Variables), redeploy. Nothing else changes.
+
+Security choices worth knowing: passwords are scrypt-hashed; the session cookie
+is HttpOnly + SameSite=Lax (+ Secure on https) and the database stores only its
+SHA-256; writes must be same-origin JSON (no CSRF token to get wrong); login and
+sign-up are rate limited in the database; and `vercel.json` sets a strict
+Content-Security-Policy (`script-src 'self'`).
+
+**Not built yet:** sending email. The email list and the "daily digest" switch
+are stored, but nothing sends a message and there is no unsubscribe link, both of
+which are needed before the first send.
 
 ## Adding a source
 
