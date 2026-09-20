@@ -91,6 +91,7 @@ open public/index.html
 | `npm run render` | Rebuild `public/index.html` from the archive |
 | `npm run daily`  | Both |
 | `npm run preview` | Render fictional sample data and serve it, with a working `/api` on an in-memory database, on :3000 |
+| `npm run send` | Email the day's digest to confirmed subscribers (safe to re-run) |
 | `npm test` | API tests, run against the in-memory store **and** real Postgres SQL (PGlite) |
 | `npm run typecheck` | `tsc --noEmit` |
 
@@ -126,9 +127,31 @@ SHA-256; writes must be same-origin JSON (no CSRF token to get wrong); login and
 sign-up are rate limited in the database; and `vercel.json` sets a strict
 Content-Security-Policy (`script-src 'self'`).
 
-**Not built yet:** sending email. The email list and the "daily digest" switch
-are stored, but nothing sends a message and there is no unsubscribe link, both of
-which are needed before the first send.
+## Email
+
+Subscribing is **double opt-in**: an address is stored the moment someone asks,
+but the digest is only ever sent after the owner clicks a confirmation link, so
+nobody can sign up somebody else's inbox. Both links in an email — confirm and
+unsubscribe — are HMAC-signed with `NEWSAI_MAIL_SECRET` and carry their own
+purpose, so one cannot be edited into the other, and nothing is looked up to
+check them (the click arrives days later with no session). Confirmation links
+expire after seven days; unsubscribe links never do, because an old newsletter
+must still work. Every digest carries `List-Unsubscribe` headers for one-click
+unsubscribe in Gmail and Outlook.
+
+`npm run send` mails the day's digest to confirmed addresses, and is **safe to
+re-run**: each address is claimed in the database before it is mailed, so a
+crash halfway through a list does not mail the first half twice. Without
+`RESEND_API_KEY` it prints each email instead of sending it — that is the way
+to try the whole flow without mailing anyone. It refuses to run without
+`NEWSAI_MAIL_SECRET`, without `DATABASE_URL`, or with no digest for the day.
+
+The provider is [Resend](https://resend.com), reached with one `fetch` and no
+SDK; swapping it means writing another `Mailer` in `src/server/mailer.ts`.
+
+**Not done yet:** the sending domain has to be verified with the provider
+(SPF/DKIM) before real mail is deliverable, and `NEWSAI_MAIL_SECRET` must be
+set to the same value on both Vercel and GitHub Actions.
 
 ## Adding a source
 

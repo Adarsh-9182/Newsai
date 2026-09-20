@@ -186,9 +186,12 @@ export const APP_JS = String.raw`(function () {
       e.preventDefault();
       var input = $("input", form), btn = $("button", form);
       btn.disabled = true;
-      api("POST", "/api/subscribe", { email: input.value }).then(function () {
+      api("POST", "/api/subscribe", { email: input.value }).then(function (j) {
         input.value = "";
-        if (msg) { msg.textContent = "You're on the list."; msg.className = "fineprint ok"; }
+        // Nothing is sent until the address is confirmed from its own inbox,
+        // so the reply asks for that rather than claiming a subscription.
+        var already = j && j.status === "confirmed";
+        if (msg) { msg.textContent = already ? "You're already subscribed — the next digest lands at 07:00 IST." : "Almost there: check your inbox for a confirmation link."; msg.className = "fineprint ok"; }
       }).catch(function (err) {
         var closed = err.code === "no_database";
         if (msg) { msg.textContent = closed ? "Subscriptions open very soon — check back shortly." : err.message; msg.className = "fineprint err"; }

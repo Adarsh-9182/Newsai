@@ -42,8 +42,19 @@ create table if not exists saves (
 );
 
 create table if not exists subscribers (
-  email      text primary key,
-  created_at timestamptz not null default now()
+  email           text primary key,
+  created_at      timestamptz not null default now(),
+  confirmed_at    timestamptz,
+  unsubscribed_at timestamptz
+);
+alter table subscribers add column if not exists confirmed_at timestamptz;
+alter table subscribers add column if not exists unsubscribed_at timestamptz;
+
+create table if not exists digest_sends (
+  date    text not null,
+  email   text not null,
+  sent_at timestamptz not null default now(),
+  primary key (date, email)
 );
 
 create table if not exists rate_limits (
@@ -57,4 +68,5 @@ alter table sessions     enable row level security;
 alter table saves        enable row level security;
 alter table subscribers  enable row level security;
 alter table rate_limits  enable row level security;
+alter table digest_sends enable row level security;
 `;

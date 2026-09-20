@@ -11,7 +11,8 @@ export function memoryStore(): Store {
   const byEmail = new Map<string, string>();
   const sessions = new Map<string, { userId: string; expiresAt: number }>();
   const saves = new Map<string, Map<string, Save>>();
-  const subscribers = new Set<string>();
+  const subscribers = new Map<string, { confirmed: boolean; unsubscribed: boolean }>();
+  const sends = new Set<string>();
   const limits = new Map<string, { count: number; resetAt: number }>();
 
   const strip = ({ passwordHash: _omit, ...u }: UserWithHash): User => u;
@@ -68,7 +69,35 @@ export function memoryStore(): Store {
       return strip(next);
     },
     async subscribe(email) {
-      subscribers.add(email);
+      const cur = subscribers.get(email);
+      if (cur && !cur.unsubscribed) return cur.confirmed ? "confirmed" : "pending";
+      subscribers.set(email, { confirmed: false, unsubscribed: false });
+      return "new";
+    },
+    async confirmSubscriber(email) {
+      subscribers.set(email, { confirmed: true, unsubscribed: false });
+    },
+    async unsubscribe(email) {
+      const cur = subscribers.get(email);
+      if (cur) subscribers.set(email, { ...cur, unsubscribed: true });
+      const id = byEmail.get(email);
+      const u = id ? users.get(id) : undefined;
+      if (id && u) users.set(id, { ...u, digest: false });
+    },
+    async pendingSubscribers() {
+      return [...subscribers].filter(([, v]) => !v.confirmed && !v.unsubscribed).map(([e]) => e);
+    },
+    async confirmedRecipients() {
+      return [...subscribers].filter(([, v]) => v.confirmed && !v.unsubscribed).map(([e]) => e);
+    },
+    async claimSend(date, email) {
+      const k = `${date}|${email}`;
+      if (sends.has(k)) return false;
+      sends.add(k);
+      return true;
+    },
+    async releaseSend(date, email) {
+      sends.delete(`${date}|${email}`);
     },
 
     async hit(key, limit, windowSec) {

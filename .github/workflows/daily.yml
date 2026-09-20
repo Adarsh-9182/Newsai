@@ -5,8 +5,11 @@
 # it. Vercel is watching the branch, so the commit is the deploy. Nothing
 # else needs to be running anywhere.
 #
-# The only secret is ANTHROPIC_API_KEY, set under
-# Settings → Secrets and variables → Actions.
+# Secrets, all under Settings → Secrets and variables → Actions:
+#   ANTHROPIC_API_KEY   summaries and the long read
+#   DATABASE_URL        the subscriber list (Neon or Supabase)
+#   NEWSAI_MAIL_SECRET  signs confirm/unsubscribe links — must match the site's
+#   RESEND_API_KEY      sending. Without it the send step prints and mails nobody.
 
 name: daily digest
 
@@ -24,6 +27,11 @@ permissions:
 jobs:
   digest:
     runs-on: ubuntu-latest
+    # The `secrets` context cannot be read from a step's `if:`, so the one
+    # question the send step asks — is mail configured at all? — is answered
+    # here, where secrets are in scope.
+    env:
+      MAIL_CONFIGURED: ${{ secrets.RESEND_API_KEY != '' && secrets.DATABASE_URL != '' && secrets.NEWSAI_MAIL_SECRET != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -53,3 +61,15 @@ jobs:
             git commit -m "digest: $(date -u +%Y-%m-%d)"
             git push
           fi
+
+      # Sending is a separate step so a failure here can never lose the digest:
+      # the day's file is already committed above, and this step is safe to
+      # re-run — each address is claimed in the database before it is mailed.
+      - name: Send the digest
+        if: ${{ env.MAIL_CONFIGURED == 'true' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          NEWSAI_MAIL_SECRET: ${{ secrets.NEWSAI_MAIL_SECRET }}
+          NEWSAI_SITE_URL: https://newsai.co.in
+        run: npm run send

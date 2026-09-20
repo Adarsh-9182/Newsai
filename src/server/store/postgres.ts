@@ -103,7 +103,50 @@ export function postgresStore(db: Db): Store {
       return rows[0] ? toUser(rows[0]) : null;
     },
     async subscribe(email) {
-      await db.query("insert into subscribers (email) values ($1) on conflict (email) do nothing", [email]);
+      const [row] = await db.query<{ confirmed_at: Date | null; unsubscribed_at: Date | null }>(
+        "select confirmed_at, unsubscribed_at from subscribers where email = $1",
+        [email],
+      );
+      if (row && !row.unsubscribed_at) return row.confirmed_at ? "confirmed" : "pending";
+      await db.query(
+        `insert into subscribers (email) values ($1)
+         on conflict (email) do update set confirmed_at = null, unsubscribed_at = null, created_at = now()`,
+        [email],
+      );
+      return "new";
+    },
+    async confirmSubscriber(email) {
+      await db.query(
+        `insert into subscribers (email, confirmed_at) values ($1, now())
+         on conflict (email) do update set confirmed_at = now(), unsubscribed_at = null`,
+        [email],
+      );
+    },
+    async unsubscribe(email) {
+      await db.query("update subscribers set unsubscribed_at = now() where email = $1 and unsubscribed_at is null", [email]);
+      await db.query("update users set digest = false where email = $1", [email]);
+    },
+    async pendingSubscribers() {
+      const rows = await db.query<{ email: string }>(
+        "select email from subscribers where confirmed_at is null and unsubscribed_at is null order by created_at",
+      );
+      return rows.map((r) => r.email);
+    },
+    async confirmedRecipients() {
+      const rows = await db.query<{ email: string }>(
+        "select email from subscribers where confirmed_at is not null and unsubscribed_at is null order by email",
+      );
+      return rows.map((r) => r.email);
+    },
+    async claimSend(date, email) {
+      const rows = await db.query(
+        "insert into digest_sends (date, email) values ($1, $2) on conflict do nothing returning email",
+        [date, email],
+      );
+      return rows.length === 1;
+    },
+    async releaseSend(date, email) {
+      await db.query("delete from digest_sends where date = $1 and email = $2", [date, email]);
     },
 
     async hit(key, limit, windowSec) {

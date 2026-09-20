@@ -42,6 +42,8 @@ export interface Prefs {
   readonly digest: boolean;
 }
 
+export type SubscriberStatus = "new" | "pending" | "confirmed";
+
 export interface Store {
   /** Returns null when the email is already registered. */
   createUser(u: { email: string; name: string; passwordHash: string }): Promise<User | null>;
@@ -57,7 +59,29 @@ export interface Store {
   removeSave(userId: string, storyId: string): Promise<void>;
 
   setPrefs(userId: string, prefs: Prefs): Promise<User | null>;
-  subscribe(email: string): Promise<void>;
+
+  /**
+   * The mailing list. An address only receives the digest once it is
+   * *confirmed* — the owner clicked a link sent to it — so nobody can enrol
+   * someone else's inbox. `subscribe` reports where the address stands:
+   * "new" (just added, or re-added after unsubscribing), "pending" (added,
+   * never confirmed), or "confirmed" (nothing more to do).
+   */
+  subscribe(email: string): Promise<SubscriberStatus>;
+  confirmSubscriber(email: string): Promise<void>;
+  /** Stops all mail to the address, and switches the digest off on any account using it. */
+  unsubscribe(email: string): Promise<void>;
+  pendingSubscribers(): Promise<string[]>;
+  confirmedRecipients(): Promise<string[]>;
+
+  /**
+   * Claims the right to send `email` the digest for `date`. True exactly once
+   * per pair, which is what makes re-running the sender safe: a crash halfway
+   * through a list and a second run does not mail the first half twice.
+   */
+  claimSend(date: string, email: string): Promise<boolean>;
+  /** Gives the claim back when the send failed, so a retry can try again. */
+  releaseSend(date: string, email: string): Promise<void>;
 
   /**
    * Counts one attempt against `key` and says whether it is within `limit`

@@ -91,7 +91,7 @@ export function home(digests: readonly Digest[]): string {
         <input class="input" type="email" name="email" placeholder="you@company.com" autocomplete="email" aria-label="Email address" required>
         <button class="btn primary" type="submit">Get the daily digest</button>
       </form>
-      <p class="fineprint" data-subscribe-msg>Free. 07:00 IST. One email a day, unsubscribe anytime.</p>
+      <p class="fineprint" data-subscribe-msg>Free. 07:00 IST. One email a day, unsubscribe in one click.</p>
     </div>
     ${signalBoard(stories)}
   </section>
@@ -296,7 +296,7 @@ export function searchIndex(digests: readonly Digest[]): SearchEntry[] {
 const PERKS = `<ul class="perks">
   <li><span class="ic">★</span><div><b>Save stories</b>Keep the ones worth coming back to, on every device.</div></li>
   <li><span class="ic">#</span><div><b>Follow topics</b>Agents, research, infra &mdash; your front page leads with what you follow.</div></li>
-  <li><span class="ic">@</span><div><b>The daily digest</b>The day's deep reads in your inbox at 07:00 IST. Off by default.</div></li>
+  <li><span class="ic">@</span><div><b>The daily digest</b>The day's deep reads in your inbox at 07:00 IST. Off by default, one click to stop.</div></li>
 </ul>`;
 
 function passwordField(autocomplete: string): string {

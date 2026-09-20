@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "AI news for Indian builders — agents first",
+  "description": "AI news for Indian builders \u2014 agents first",
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
@@ -11,7 +11,8 @@
     "render": "npm run build && node dist/render.js",
     "daily": "npm run digest && npm run render",
     "preview": "node scripts/preview.mjs",
-    "test": "npm run build && node --test \"dist/**/*.test.js\""
+    "test": "npm run build && node --test \"dist/**/*.test.js\"",
+    "send": "npm run build && node --env-file-if-exists=.env dist/send.js"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",

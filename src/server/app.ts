@@ -19,6 +19,7 @@
 import { Store, User } from "./types.js";
 import { TAGS } from "../tags.js";
 import { hashPassword, verifyPassword, DUMMY_HASH, newToken, hashToken } from "./crypto.js";
+import { mailSecret, readToken } from "./maillink.js";
 
 const COOKIE = "nai_session";
 const SESSION_DAYS = 30;
@@ -38,6 +39,25 @@ function json(status: number, body: unknown, headers: Record<string, string> = {
     status,
     headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers },
   });
+}
+
+/**
+ * A minimal HTML reply, for the links people click in an email. It carries no
+ * dynamic text: everything on it is written here, so there is nothing from a
+ * token or a query string to escape.
+ */
+function page(status: number, title: string, detail: string): Response {
+  return new Response(
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
+      `<title>${title} — newsai</title><meta name="robots" content="noindex"></head>` +
+      `<body style="margin:0;background:#141414;color:#fefefe;font:16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif">` +
+      `<main style="max-width:520px;margin:0 auto;padding:18vh 22px 0;text-align:center">` +
+      `<h1 style="font-size:28px;letter-spacing:-.03em;margin:0 0 12px">${title}</h1>` +
+      `<p style="color:#d2d2d2;margin:0 0 26px">${detail}</p>` +
+      `<a href="/" style="display:inline-block;padding:11px 20px;border:1px solid #3c3c3c;border-radius:9px;color:#fefefe;text-decoration:none">Back to newsai</a>` +
+      `</main></body></html>`,
+    { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } },
+  );
 }
 
 function cookies(req: Request): Record<string, string> {
@@ -191,8 +211,32 @@ export async function handle(req: Request, store: Store | null): Promise<Respons
     // — newsletter, no account needed —
     if (path === "/api/subscribe" && method === "POST") {
       if (!(await store.hit(`sub:${ip}`, 10, 3600))) throw new HttpError(429, "rate_limited", "Too many requests.");
-      await store.subscribe(email((await body(req)).email));
-      return json(200, { ok: true });
+      const status = await store.subscribe(email((await body(req)).email));
+      // The reply says the same thing whatever the status: whether an address
+      // is already on this list is not something a stranger gets to find out.
+      return json(200, { ok: true, status });
+    }
+
+    // — the links inside an email —
+    //
+    // These are GET requests clicked from a mail client: no session, no
+    // Origin, often a different device. A signed token stands in for all of
+    // that, and the reply is a small HTML page rather than JSON because a
+    // person is looking at it.
+    if ((path === "/api/mail/confirm" || path === "/api/mail/unsubscribe") && (method === "GET" || method === "POST")) {
+      const secret = mailSecret();
+      const purpose = path.endsWith("confirm") ? "confirm" : "unsubscribe";
+      const addr = secret ? readToken(secret, purpose, url.searchParams.get("t") ?? "") : null;
+      if (!addr) {
+        return page(400, "This link is no longer valid", "Confirmation links expire after seven days. Ask for a new one from the site and we'll send a fresh link.");
+      }
+      if (purpose === "confirm") {
+        await store.confirmSubscriber(addr);
+        return page(200, "You're subscribed", "The next digest lands at 07:00 IST. Every email has an unsubscribe link at the bottom.");
+      }
+      await store.unsubscribe(addr);
+      // One-click unsubscribe (RFC 8058) POSTs here; a person clicking gets the page.
+      return method === "POST" ? json(200, { ok: true }) : page(200, "You're unsubscribed", "No more digests will be sent to this address. You can subscribe again any time from the site.");
     }
 
     // — everything below needs a session —
