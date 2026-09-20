@@ -98,10 +98,22 @@ open public/index.html
 ## Deploying
 
 1. Push this repo to GitHub.
-2. Add `ANTHROPIC_API_KEY` under **Settings → Secrets and variables → Actions**.
-3. Import the repo on Vercel. Build settings come from `vercel.json`.
-4. Point `newsai.co.in` at Vercel and add it under the project's Domains.
-5. Run the workflow once by hand (**Actions → daily digest → Run workflow**)
+2. Import the repo on Vercel. Build settings come from `vercel.json`; the API
+   is the single function in `api/`, on the Node runtime (the Postgres driver
+   needs a TCP socket, which the edge runtime cannot open).
+3. Create the database (Neon or Supabase) and set these under **Vercel →
+   Settings → Environment Variables**:
+   `DATABASE_URL`, `NEWSAI_MAIL_SECRET`, `RESEND_API_KEY`, `NEWSAI_SITE_URL`.
+   Tables are created on the first request.
+4. Set the Actions secrets under **GitHub → Settings → Secrets and variables →
+   Actions**: `ANTHROPIC_API_KEY`, and — to send mail — `DATABASE_URL`,
+   `RESEND_API_KEY` and `NEWSAI_MAIL_SECRET`. **`NEWSAI_MAIL_SECRET` must be
+   the same string in both places**, or links made by one are rejected by the
+   other. The send step skips itself when they are missing.
+5. Point `newsai.co.in` at Vercel and add it under the project's Domains.
+6. Check `/api/health` — `{"ok":true,"database":true}` means the function
+   deployed and reached the database.
+7. Run the workflow once by hand (**Actions → daily digest → Run workflow**)
    to check it end to end before trusting the schedule.
 
 ## Accounts and the database

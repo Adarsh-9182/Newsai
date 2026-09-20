@@ -88,7 +88,9 @@ const secHeaders = Object.fromEntries(
   vercel.headers.flatMap((h) => h.source === "/(.*)" ? h.headers.map((x) => [x.key, x.value]) : []),
 );
 
-const { handle } = await import(join(root, "dist/server/app.js"));
+// The same adapter the Vercel function uses, so the bridge between Node and
+// the web-standard app is exercised here rather than only in production.
+const { nodeHandler } = await import(join(root, "dist/server/node.js"));
 const { memoryStore } = await import(join(root, "dist/server/store/memory.js"));
 const store = memoryStore();
 
@@ -96,15 +98,7 @@ const PORT = Number(process.env.PORT ?? 3000);
 createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   if (url.pathname.startsWith("/api/")) {
-    const chunks = [];
-    for await (const c of req) chunks.push(c);
-    const hasBody = !["GET", "HEAD"].includes(req.method);
-    const r = await handle(new Request(url, { method: req.method, headers: req.headers, body: hasBody ? Buffer.concat(chunks) : undefined }), store);
-    const headers = {};
-    r.headers.forEach((v, k) => { headers[k] = v; });
-    const cookie = r.headers.getSetCookie?.();
-    if (cookie?.length) headers["set-cookie"] = cookie;
-    res.writeHead(r.status, headers).end(Buffer.from(await r.arrayBuffer()));
+    await nodeHandler(req, res, store);
     return;
   }
   let p = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, "");
