@@ -1,0 +1,55 @@
+# The site publishes itself.
+#
+# GitHub Actions is the scheduler because it is free and already next to the
+# data: the run fetches, summarises, writes data/YYYY-MM-DD.json and commits
+# it. Vercel is watching the branch, so the commit is the deploy. Nothing
+# else needs to be running anywhere.
+#
+# The only secret is ANTHROPIC_API_KEY, set under
+# Settings → Secrets and variables → Actions.
+
+name: daily digest
+
+on:
+  schedule:
+    # 01:30 UTC = 07:00 IST. Published before the working day starts in India.
+    - cron: "30 1 * * *"
+  # So a broken morning can be re-run by hand without waiting for tomorrow.
+  workflow_dispatch:
+
+# The job writes to the repository, so it needs more than the read-only default.
+permissions:
+  contents: write
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build the digest
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          NEWSAI_MAX_STORIES: "25"
+        run: npm run daily
+
+      - name: Commit today's digest
+        run: |
+          git config user.name  "newsai bot"
+          git config user.email "noreply@newsai.co.in"
+          git add data/
+          # A quiet day writes an identical file; committing nothing is success,
+          # not failure, so the workflow must not exit non-zero here.
+          if git diff --staged --quiet; then
+            echo "nothing new to publish"
+          else
+            git commit -m "digest: $(date -u +%Y-%m-%d)"
+            git push
+          fi

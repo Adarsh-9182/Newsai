@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build && node dist/render.js",
+  "outputDirectory": "public",
+  "framework": null
+}
