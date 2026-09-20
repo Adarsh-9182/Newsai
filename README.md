@@ -1,10 +1,11 @@
 # newsai.co.in
 
-AI news for Indian builders — agents first.
+AI news, analysed — agents first.
 
-A daily digest assembled from arXiv, Hacker News, GitHub and lab blogs,
-summarised by a small model, published as static HTML. No database, no server,
-no framework.
+A daily digest assembled from arXiv, Hacker News, GitHub and lab blogs. A small
+model summarises every story; a larger one writes a long read, with a mandatory
+"what this doesn't show" section, for the few that earn it. Published as static
+HTML: no database, no server, no client-side JavaScript.
 
 ## How it works
 
@@ -15,6 +16,7 @@ arXiv · Hacker News · GitHub · lab blogs (RSS/Atom)
         ├─ rank by the source's own signal (HN points, stars) decayed by age
         ├─ cap at NEWSAI_MAX_STORIES before spending anything
         ├─ summarise in batches (Claude Haiku 4.5)
+        ├─ analyse the top NEWSAI_ANALYSIS_DEPTH stories (Claude Sonnet 5)
         │
         └─ data/YYYY-MM-DD.json  ──git commit──▶  Vercel deploy ──▶ public/index.html
 ```
@@ -32,14 +34,47 @@ points and GitHub stars — measurements that already exist. The model is told
 it has not read the linked page and must not add a fact that is not in front
 of it.
 
+## The site
+
+Every page is a static file, generated from `data/` alone. Delete `public/`, run
+`npm run render`, get the same site.
+
+| Route | What |
+|---|---|
+| `/` | Hero, today's lead, grid, recent days |
+| `/story/<slug>/` | The long read: what happened · why it matters · **what this doesn't show** · takeaways |
+| `/tag/<tag>/` | Every story under a tag. The filter chips are real links, not JavaScript |
+| `/day/<date>/` · `/archive/` | Any past day |
+| `/about/` | How stories are chosen and what the model may and may not do |
+| `/feed.xml` · `/sitemap.xml` | RSS and sitemap |
+
+Design tokens (off-black `#1e1e1e`, off-white `#fefefe`, Host Grotesk +
+JetBrains Mono, green/teal/pink accents) were read from typesafe.ai's CSS. Colour
+carries meaning: green is research, teal is agents, pink is policy.
+
+**Link safety.** Story URLs come from feeds this project does not control, so
+only `http(s)` links are ever emitted (`safeUrl`). Every dynamic value is
+escaped. Both were tested with hostile input, not assumed.
+
+## Preview without an API key
+
+```bash
+npm run preview     # http://localhost:3000, fictional sample data only
+```
+
 ## Cost
 
-The only thing that costs money is the summariser, and two things keep it flat:
-items are batched (25 stories ≈ 4 requests, not 25), and `NEWSAI_MAX_STORIES`
-caps the run *before* it starts, so a dramatic news day costs the same as a
-quiet one. Everything else — Actions, Vercel, all four sources — is free.
+The models are the only thing that costs money. Depth is rationed, which is what
+keeps it cheap: Haiku summarises everything (25 stories ≈ 4 batched requests),
+and Sonnet writes a long read for only `NEWSAI_ANALYSIS_DEPTH` (default 5).
+Both ceilings apply *before* anything is sent, so a dramatic news day costs the
+same as a quiet one. Actions, Vercel and all the sources are free.
 
-Switch `NEWSAI_MODEL` to `claude-sonnet-5` if the summaries ever read badly.
+**These figures are unmeasured.** The summariser and analyser have not yet run
+against the live API; the first real run prints token counts, and that is the
+number to trust.
+
+`NEWSAI_MODEL` (summaries) and `NEWSAI_ANALYSIS_MODEL` (long reads) override the defaults.
 
 ## Running it
 
@@ -55,6 +90,7 @@ open public/index.html
 | `npm run digest` | Fetch, dedupe, summarise, write `data/<today>.json` |
 | `npm run render` | Rebuild `public/index.html` from the archive |
 | `npm run daily`  | Both |
+| `npm run preview` | Render fictional sample data and serve it on :3000 |
 | `npm run typecheck` | `tsc --noEmit` |
 
 ## Deploying

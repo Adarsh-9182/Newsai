@@ -12,7 +12,12 @@ import { readFile, readdir, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Digest } from "./types.js";
 
-export const DATA_DIR = new URL("../data/", import.meta.url).pathname;
+/**
+ * Where the digests live. Overridable so a preview or a test can point at a
+ * scratch directory and never risk writing sample data into the real archive,
+ * which is committed and published.
+ */
+export const DATA_DIR = (process.env.NEWSAI_DATA_DIR ?? new URL("../data/", import.meta.url).pathname).replace(/\/?$/, "/");
 
 export const today = (): string => new Date().toISOString().slice(0, 10);
 

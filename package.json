@@ -3,13 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "AI news for Indian builders — agents first",
+  "description": "AI news for Indian builders \u2014 agents first",
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "digest": "npm run build && node --env-file-if-exists=.env dist/pipeline.js",
     "render": "npm run build && node dist/render.js",
-    "daily": "npm run digest && npm run render"
+    "daily": "npm run digest && npm run render",
+    "preview": "node scripts/preview.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.1.0",

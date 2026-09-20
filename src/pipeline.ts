@@ -16,10 +16,13 @@ import { RawItem, Digest } from "./types.js";
 import { collectAll } from "./sources/index.js";
 import { dedupeWithin, dropAlreadyPublished } from "./dedupe.js";
 import { summarise } from "./summarize.js";
+import { analyseTop } from "./analyse.js";
 import { readArchive, writeDigest, today } from "./archive.js";
 
 /** Hard ceiling on a run, so a busy news day cannot cost a surprising amount. */
 const DEFAULT_MAX = 25;
+/** How many of the day's stories get the long read. */
+const DEFAULT_DEPTH = 5;
 
 /**
  * Recency decays the source's own signal rather than replacing it: a story
@@ -38,8 +41,28 @@ function rank(items: readonly RawItem[]): RawItem[] {
   }
 }
 
+/**
+ * A stable, readable URL for a story's own page.
+ *
+ * Derived from the title, suffixed with the item's id hash so two stories
+ * that shorten to the same words never overwrite each other's page.
+ */
+function slugify(title: string, id: string): string {
+  const base = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .split("-")
+    .slice(0, 8)
+    .join("-");
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return `${base || "story"}-${Math.abs(h).toString(36).slice(0, 5)}`;
+}
+
 export async function runPipeline(client?: Anthropic): Promise<Digest> {
   const max = Number(process.env.NEWSAI_MAX_STORIES ?? DEFAULT_MAX);
+  const depth = Number(process.env.NEWSAI_ANALYSIS_DEPTH ?? DEFAULT_DEPTH);
 
   console.log("Collecting…");
   const { items } = await collectAll();
@@ -58,18 +81,23 @@ export async function runPipeline(client?: Anthropic): Promise<Digest> {
   console.log(`Summarising ${chosen.length}…`);
   const { stories, usage } = await summarise(chosen, client);
 
+  console.log(`Analysing top ${Math.min(depth, stories.length)}…`);
+  const { stories: deep, usage: analysisUsage } = await analyseTop(stories, depth, client);
+
   const digest: Digest = {
     date: today(),
     generatedAt: new Date().toISOString(),
     // Preserve the ranking the sources earned; the summariser may drop items
     // but must never reorder them.
-    stories,
+    stories: deep.map((s) => ({ ...s, slug: slugify(s.title, s.id) })),
   };
   const path = await writeDigest(digest);
 
+  const analysed = digest.stories.filter((s) => s.analysis).length;
   console.log(
-    `Wrote ${stories.length} stories to ${path}\n` +
-      `  ${usage.requests} requests · ${usage.inputTokens} in · ${usage.outputTokens} out`,
+    `Wrote ${digest.stories.length} stories (${analysed} analysed) to ${path}\n` +
+      `  summarise: ${usage.requests} req · ${usage.inputTokens} in · ${usage.outputTokens} out\n` +
+      `  analyse:   ${analysisUsage.requests} req · ${analysisUsage.inputTokens} in · ${analysisUsage.outputTokens} out`,
   );
   return digest;
 }
