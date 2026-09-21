@@ -44,6 +44,14 @@ export interface Prefs {
 
 export type SubscriberStatus = "new" | "pending" | "confirmed";
 
+/**
+ * The claim key for "this address has been sent its confirmation email".
+ * It deliberately carries no date: a confirmation is sent once per
+ * subscription, not once per day. Someone who never confirms must not be
+ * mailed again tomorrow — they have not consented to anything.
+ */
+export const CONFIRM_CLAIM = "confirm";
+
 export interface Store {
   /** Returns null when the email is already registered. */
   createUser(u: { email: string; name: string; passwordHash: string }): Promise<User | null>;

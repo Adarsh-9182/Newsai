@@ -151,6 +151,11 @@ expire after seven days; unsubscribe links never do, because an old newsletter
 must still work. Every digest carries `List-Unsubscribe` headers for one-click
 unsubscribe in Gmail and Outlook.
 
+A confirmation is sent **once per subscription**, never once a day: an address
+that is added and never confirmed is mailed a single time and then left alone,
+because it has consented to nothing. Unsubscribing and subscribing again counts
+as a new subscription and earns a fresh link.
+
 `npm run send` mails the day's digest to confirmed addresses, and is **safe to
 re-run**: each address is claimed in the database before it is mailed, so a
 crash halfway through a list does not mail the first half twice. Without

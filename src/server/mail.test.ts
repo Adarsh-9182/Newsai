@@ -11,6 +11,7 @@ import { Store } from "./types.js";
 import { memoryStore } from "./store/memory.js";
 import { postgresStore, migrate, Db } from "./store/postgres.js";
 import { makeToken, readToken, confirmUrl, unsubscribeUrl } from "./maillink.js";
+import { CONFIRM_CLAIM } from "./types.js";
 import { digestEmail, confirmEmail } from "./emails.js";
 import { resendMailer, Mailer, Mail } from "./mailer.js";
 import { Digest } from "../types.js";
@@ -107,6 +108,30 @@ for (const [label, make] of [["memory", async () => memoryStore()], ["postgres (
       await store.setPrefs(user!.id, { follows: [], digest: true });
       await get(unsubscribeUrl("", SECRET, "ada@example.com"), store);
       assert.equal((await store.userByEmail("ada@example.com"))!.digest, false);
+    });
+
+    test("an address that never confirms is mailed once, not once a day", async () => {
+      const store = await make();
+      await store.subscribe("ada@example.com");
+      // Day one: the confirmation goes out.
+      assert.equal(await store.claimSend(CONFIRM_CLAIM, "ada@example.com"), true);
+      // Every day after: nothing, however many times the sender runs. Someone
+      // who never confirmed has consented to nothing.
+      for (const _day of ["2026-09-21", "2026-09-22", "2026-09-23"]) {
+        assert.equal(await store.claimSend(CONFIRM_CLAIM, "ada@example.com"), false);
+      }
+      // Asking again from the site does not re-trigger it either.
+      assert.equal(await store.subscribe("ada@example.com"), "pending");
+      assert.equal(await store.claimSend(CONFIRM_CLAIM, "ada@example.com"), false);
+    });
+
+    test("unsubscribing and subscribing again earns a fresh confirmation", async () => {
+      const store = await make();
+      await store.subscribe("ada@example.com");
+      assert.equal(await store.claimSend(CONFIRM_CLAIM, "ada@example.com"), true);
+      await store.unsubscribe("ada@example.com");
+      assert.equal(await store.subscribe("ada@example.com"), "new");
+      assert.equal(await store.claimSend(CONFIRM_CLAIM, "ada@example.com"), true, "a real new subscription is confirmable again");
     });
 
     test("claimSend hands each address out exactly once, and releases on failure", async () => {

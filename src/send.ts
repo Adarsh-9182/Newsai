@@ -15,6 +15,7 @@
 
 import { readArchive, today } from "./archive.js";
 import { storeFromEnv } from "./server/store/index.js";
+import { CONFIRM_CLAIM } from "./server/types.js";
 import { mailerFromEnv } from "./server/mailer.js";
 import { digestEmail, confirmEmail } from "./server/emails.js";
 import { mailSecret, confirmUrl, unsubscribeUrl } from "./server/maillink.js";
@@ -44,13 +45,14 @@ export async function send(date = today()): Promise<{ sent: number; failed: numb
   // Anyone who asked but never confirmed gets the confirmation, not the digest.
   let confirmations = 0;
   for (const email of await store.pendingSubscribers()) {
-    if (!(await store.claimSend(`confirm:${date}`, email))) continue;
+    // Dateless: one confirmation per subscription, not one per day.
+    if (!(await store.claimSend(CONFIRM_CLAIM, email))) continue;
     try {
       const mail = confirmEmail(confirmUrl(SITE_URL, secret, email));
       await mailer.send({ to: email, subject: mail.subject, html: mail.html, text: mail.text });
       confirmations += 1;
     } catch (err) {
-      await store.releaseSend(`confirm:${date}`, email);
+      await store.releaseSend(CONFIRM_CLAIM, email);
       console.warn(`  confirmation to ${email} failed: ${err}`);
     }
     await sleep(GAP_MS);

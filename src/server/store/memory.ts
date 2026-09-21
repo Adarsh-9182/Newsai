@@ -4,7 +4,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { Store, User, UserWithHash, Save, Prefs } from "../types.js";
+import { Store, User, UserWithHash, Save, Prefs, CONFIRM_CLAIM } from "../types.js";
 
 export function memoryStore(): Store {
   const users = new Map<string, UserWithHash>();
@@ -72,6 +72,10 @@ export function memoryStore(): Store {
       const cur = subscribers.get(email);
       if (cur && !cur.unsubscribed) return cur.confirmed ? "confirmed" : "pending";
       subscribers.set(email, { confirmed: false, unsubscribed: false });
+      // A fresh subscription earns exactly one confirmation email. Clearing the
+      // claim here — and only here — is what stops an address that never
+      // confirms from being mailed again every day.
+      sends.delete(`${CONFIRM_CLAIM}|${email}`);
       return "new";
     },
     async confirmSubscriber(email) {

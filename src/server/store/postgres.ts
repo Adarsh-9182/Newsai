@@ -8,7 +8,7 @@
  * nothing user-supplied is ever concatenated into a query.
  */
 
-import { Store, User, UserWithHash, Save } from "../types.js";
+import { Store, User, UserWithHash, Save, CONFIRM_CLAIM } from "../types.js";
 import { SCHEMA } from "./schema.js";
 
 export interface Db {
@@ -113,6 +113,10 @@ export function postgresStore(db: Db): Store {
          on conflict (email) do update set confirmed_at = null, unsubscribed_at = null, created_at = now()`,
         [email],
       );
+      // A fresh subscription earns exactly one confirmation email. Clearing the
+      // claim here — and only here — is what stops an address that never
+      // confirms from being mailed again every day.
+      await db.query("delete from digest_sends where date = $1 and email = $2", [CONFIRM_CLAIM, email]);
       return "new";
     },
     async confirmSubscriber(email) {
