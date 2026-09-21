@@ -118,7 +118,7 @@ open public/index.html
 
 ## Accounts and the database
 
-The site is static; accounts are a thin API (`api/index.ts` → `src/server/app.ts`)
+The site is static; accounts are a thin API (`api/index.js` → `dist/server/node.js` → `src/server/app.ts`)
 that runs as one Vercel function. It handles sign-up / sign-in, saved stories,
 followed topics and the email list. Everything it stores goes through the
 `Store` interface (`src/server/types.ts`), so the database is a late decision:
