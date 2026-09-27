@@ -16,6 +16,7 @@
  */
 
 import { RawItem } from "../types.js";
+import { fetchSource } from "./http.js";
 
 const ENDPOINT = "https://api.github.com/search/repositories";
 const TOPICS = ["ai-agents", "agentic-ai", "llm", "mcp"] as const;
@@ -36,7 +37,7 @@ interface Repo {
 async function searchTopic(topic: string, since: string): Promise<Repo[]> {
   const q = `topic:${topic} created:>${since} stars:>${MIN_STARS}`;
   const url = `${ENDPOINT}?q=${encodeURIComponent(q)}&sort=stars&order=desc&per_page=${PER_TOPIC}`;
-  const res = await fetch(url, {
+  const res = await fetchSource(url, {
     headers: { Accept: "application/vnd.github+json", "User-Agent": "newsai.co.in" },
   });
   if (!res.ok) throw new Error(`GitHub ${res.status} for topic:${topic}`);

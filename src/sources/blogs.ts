@@ -17,6 +17,7 @@
 
 import { RawItem } from "../types.js";
 import { blocks, text, attr } from "../xml.js";
+import { fetchSource } from "./http.js";
 
 interface Feed {
   readonly name: string;
@@ -49,7 +50,7 @@ export const FEEDS: readonly Feed[] = [
 const MAX_AGE_DAYS = 10;
 
 export async function fetchFeed(feed: Feed): Promise<RawItem[]> {
-  const res = await fetch(feed.url, { headers: { "User-Agent": "newsai.co.in (daily digest)" } });
+  const res = await fetchSource(feed.url, { headers: { "User-Agent": "newsai.co.in (daily digest)" } });
   if (!res.ok) throw new Error(`${feed.name} ${res.status}`);
   const xml = await res.text();
 

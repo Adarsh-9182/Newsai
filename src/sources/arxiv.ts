@@ -13,6 +13,7 @@
 
 import { RawItem } from "../types.js";
 import { blocks, text, attr } from "../xml.js";
+import { fetchSource } from "./http.js";
 
 const CATEGORIES = ["cs.AI", "cs.LG", "cs.CL", "cs.MA"] as const;
 const ENDPOINT = "http://export.arxiv.org/api/query";
@@ -23,7 +24,7 @@ export async function fetchArxiv(max = 40): Promise<RawItem[]> {
     `${ENDPOINT}?search_query=${query}` +
     `&sortBy=submittedDate&sortOrder=descending&max_results=${max}`;
 
-  const res = await fetch(url, { headers: { "User-Agent": "newsai.co.in (daily digest)" } });
+  const res = await fetchSource(url, { headers: { "User-Agent": "newsai.co.in (daily digest)" } });
   if (!res.ok) throw new Error(`arXiv ${res.status}`);
   const xml = await res.text();
 

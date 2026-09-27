@@ -11,8 +11,8 @@
  * importance would be guessing at it for money.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
 import { RawItem, Digest } from "./types.js";
+import { LanguageModel, gemini } from "./llm.js";
 import { collectAll } from "./sources/index.js";
 import { dedupeWithin, dropAlreadyPublished } from "./dedupe.js";
 import { summarise } from "./summarize.js";
@@ -23,6 +23,17 @@ import { readArchive, writeDigest, today } from "./archive.js";
 const DEFAULT_MAX = 25;
 /** How many of the day's stories get the long read. */
 const DEFAULT_DEPTH = 5;
+
+/** Environment overrides may lower spend, but never raise the published caps. */
+function limit(name: string, fallback: number, maximum: number, minimum = 0): number {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < minimum) {
+    throw new Error(`${name} must be an integer from ${minimum} to ${maximum}.`);
+  }
+  return Math.min(value, maximum);
+}
 
 /**
  * Recency decays the source's own signal rather than replacing it: a story
@@ -60,9 +71,13 @@ function slugify(title: string, id: string): string {
   return `${base || "story"}-${Math.abs(h).toString(36).slice(0, 5)}`;
 }
 
-export async function runPipeline(client?: Anthropic): Promise<Digest> {
-  const max = Number(process.env.NEWSAI_MAX_STORIES ?? DEFAULT_MAX);
-  const depth = Number(process.env.NEWSAI_ANALYSIS_DEPTH ?? DEFAULT_DEPTH);
+export async function runPipeline(client?: LanguageModel): Promise<Digest> {
+  // Initialize credentials before source collection so a misconfigured run
+  // fails fast without publishing a blank digest.
+  const model = client ?? gemini();
+
+  const max = limit("NEWSAI_MAX_STORIES", DEFAULT_MAX, DEFAULT_MAX, 1);
+  const depth = limit("NEWSAI_ANALYSIS_DEPTH", DEFAULT_DEPTH, DEFAULT_DEPTH);
 
   console.log("Collecting…");
   const { items } = await collectAll();
@@ -79,10 +94,13 @@ export async function runPipeline(client?: Anthropic): Promise<Digest> {
   }
 
   console.log(`Summarising ${chosen.length}…`);
-  const { stories, usage } = await summarise(chosen, client);
+  const { stories, usage } = await summarise(chosen, model);
+  if (chosen.length > 0 && stories.length === 0) {
+    throw new Error("All story summaries failed; refusing to publish an empty digest.");
+  }
 
   console.log(`Analysing top ${Math.min(depth, stories.length)}…`);
-  const { stories: deep, usage: analysisUsage } = await analyseTop(stories, depth, client);
+  const { stories: deep, usage: analysisUsage } = await analyseTop(stories, depth, model);
 
   const digest: Digest = {
     date: today(),
@@ -91,6 +109,13 @@ export async function runPipeline(client?: Anthropic): Promise<Digest> {
     // but must never reorder them.
     stories: deep.map((s) => ({ ...s, slug: slugify(s.title, s.id) })),
   };
+  // No new stories is a quiet day, not a digest to publish. Keep the latest
+  // actual edition on the site and let the workflow finish without a commit.
+  if (digest.stories.length === 0) {
+    console.log("No publishable stories today; leaving the archive unchanged.");
+    return digest;
+  }
+
   const path = await writeDigest(digest);
 
   const analysed = digest.stories.filter((s) => s.analysis).length;

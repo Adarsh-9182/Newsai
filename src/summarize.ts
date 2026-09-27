@@ -1,29 +1,27 @@
 /**
- * The only place this project spends money.
+ * The model boundary for summaries.
  *
- * Haiku 4.5 by default, deliberately. The job is compression, not judgement:
+ * Gemini Flash-Lite by default, deliberately. The job is compression, not judgement:
  * the model is handed a title and an abstract and asked to say what they say,
- * shorter. Paying five times as much for deeper reasoning buys very little on
- * that task, and this site's whole economics rest on a daily run costing
- * paise rather than rupees. NEWSAI_MODEL overrides it if the summaries ever
- * read badly.
+ * shorter. The free API tier keeps daily runs at zero inference cost.
+ * NEWSAI_SUMMARY_MODEL overrides it if the summaries ever read badly.
  *
  * Two things keep the bill flat regardless of how busy the news is: items are
  * summarised in batches, so twenty-five stories are a handful of requests
  * rather than twenty-five, and NEWSAI_MAX_STORIES caps the run before it
- * starts. A dramatic AI news day costs the same as a quiet one.
+ * starts. A busy day also stays under the same published request ceiling.
  *
  * The model is never asked to *rank*. What leads the page is decided by
  * signal, in the pipeline, from HN points and stars — numbers that already
- * exist. Asking a model to score importance would be paying it to guess at
- * something the sources already measured.
+ * exist. Asking a model to score importance would be guessing at something
+ * the sources already measured.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
 import { RawItem, Story } from "./types.js";
+import { LanguageModel } from "./llm.js";
 
-/** Cheapest model that can compress an abstract. Override with NEWSAI_MODEL. */
-const DEFAULT_MODEL = "claude-haiku-4-5";
+/** Free-tier stable model for high-volume compression. */
+const DEFAULT_MODEL = "gemini-3.1-flash-lite";
 /** Items per request. Large enough to amortise the instructions, small
  *  enough that one malformed reply costs a handful of stories, not the day. */
 const BATCH = 8;
@@ -80,7 +78,7 @@ function parseReplies(raw: string): Reply[] {
 const ALLOWED_TAGS = new Set(["agents", "models", "research", "tools", "infra", "funding", "policy", "india"]);
 
 async function summariseBatch(
-  client: Anthropic,
+  client: LanguageModel,
   model: string,
   batch: readonly RawItem[],
   usage: SummaryUsage,
@@ -89,23 +87,18 @@ async function summariseBatch(
     .map((it, n) => `${n + 1}. [${it.source}] ${it.title}\n${it.text ?? "(no description provided)"}`)
     .join("\n\n");
 
-  const response = await client.messages.create({
+  const response = await client.generate({
     model,
-    max_tokens: 3000,
     system: SYSTEM,
-    messages: [{ role: "user", content: prompt }],
+    prompt,
+    maxTokens: 3000,
   });
 
   usage.requests += 1;
-  usage.inputTokens += response.usage.input_tokens ?? 0;
-  usage.outputTokens += response.usage.output_tokens ?? 0;
+  usage.inputTokens += response.inputTokens;
+  usage.outputTokens += response.outputTokens;
 
-  const text = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("");
-
-  const replies = parseReplies(text);
+  const replies = parseReplies(response.text);
   return batch.flatMap((item, n): Story[] => {
     // Match on the model's own index where it gave one, else by position.
     const r = replies.find((x) => x.i === n + 1) ?? replies[n];
@@ -126,9 +119,9 @@ async function summariseBatch(
 
 export async function summarise(
   items: readonly RawItem[],
-  client: Anthropic = new Anthropic(),
+  client: LanguageModel,
 ): Promise<{ stories: Story[]; usage: SummaryUsage }> {
-  const model = process.env.NEWSAI_MODEL ?? DEFAULT_MODEL;
+  const model = process.env.NEWSAI_SUMMARY_MODEL ?? DEFAULT_MODEL;
   const usage: SummaryUsage = { inputTokens: 0, outputTokens: 0, requests: 0 };
   const stories: Story[] = [];
 

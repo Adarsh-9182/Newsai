@@ -9,6 +9,7 @@
  */
 
 import { RawItem } from "../types.js";
+import { fetchSource } from "./http.js";
 
 const ENDPOINT = "https://hn.algolia.com/api/v1/search_by_date";
 /** Below this, a story has not cleared HN's own bar. */
@@ -29,7 +30,7 @@ export async function fetchHackerNews(hoursBack = 36): Promise<RawItem[]> {
     `${ENDPOINT}?query=AI&tags=story` +
     `&numericFilters=created_at_i>${since},points>${MIN_POINTS}&hitsPerPage=40`;
 
-  const res = await fetch(url);
+  const res = await fetchSource(url);
   if (!res.ok) throw new Error(`HN ${res.status}`);
   const data = (await res.json()) as { hits?: Hit[] };
 

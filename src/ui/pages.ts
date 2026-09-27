@@ -110,10 +110,10 @@ export function home(digests: readonly Digest[]): string {
       <p>The caveats field is mandatory. An analysis that only amplifies is how a news site starts inventing significance.</p></div>
     <div class="tile spot"><span class="num">03 / NEVER TWICE</span><h3>Checked against everything already published.</h3>
       <p>By id, address and title, before a model sees it. Nothing is paid for that a reader wouldn't see.</p></div>
-    <div class="tile spot wide"><span class="num">04 / COST</span><h3>Small model for the line, larger model for the long read.</h3>
-      <p>Compressing an abstract is mechanical; saying what a release changes for someone building with it is judgement. Depth is rationed to the few stories that earn it.</p>
-<pre><i>summarise</i>  claude-haiku-4-5   <b>every story</b>
-<i>analyse  </i>  claude-sonnet-5    <b>top ${Number(process.env.NEWSAI_ANALYSIS_DEPTH ?? 5)} a day</b></pre></div>
+    <div class="tile spot wide"><span class="num">04 / MODEL</span><h3>Free model for the line, capped analysis for the long read.</h3>
+      <p>Every story gets a concise summary. Deeper analysis is limited to a few stories and includes a mandatory caveat.</p>
+<pre><i>summarise</i>  gemini-3.1-flash-lite   <b>every story</b>
+<i>analyse  </i>  gemini-3.1-flash-lite   <b>top ${Number(process.env.NEWSAI_ANALYSIS_DEPTH ?? 5)} a day</b></pre></div>
   </section>
 
   <section class="band">
@@ -248,16 +248,19 @@ export function aboutPage(): string {
   points and GitHub stars &mdash; decayed by age. A model asked to score importance would be guessing at
   something that has already been counted.</p>
   <h2>What the model does</h2>
-  <p>It compresses. A small model writes the one-line summary of every story; a larger one writes the long read
+  <p>It compresses. Gemini 3.1 Flash-Lite writes the one-line summary of every story and the long read
   for the few that earn it. Both are shown only the title and abstract, and are told they have not read the
   linked page and must not add a number, name or date that is not in front of them.</p>
+  <p>The pipeline uses Google's free API tier. Only titles and text from public feeds are sent; Google's
+  unpaid-tier terms allow prompts and responses to be used to improve its products and reviewed for quality.
+  No account or subscriber information is sent to the model.</p>
   <h2>What every analysis ends with</h2>
   <p>A section called <em>what this doesn't show</em>. An analysis that only amplifies is how a news site starts
   inventing significance, so the caveats field is mandatory.</p>
   <h2>Never twice</h2>
   <p>Every story is checked against everything already published, by id, address and title, before a model sees it.</p>
   <h2>The archive</h2>
-  <pre>data/2026-09-20.json   one file per day, committed to git</pre>
+  <pre>data/YYYY-MM-DD.json   one file per published day, committed to git</pre>
   <p>No database. If a run goes wrong it is reverted like any other commit.</p>
 </main>`;
   return shell({ title: "How it works", description: "How newsai chooses, ranks and writes its stories.", path: "/about/", body });

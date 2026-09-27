@@ -1,12 +1,11 @@
 /**
  * The long read — a deeper pass over the few stories that earn one.
  *
- * Sonnet 5 here, where the summariser uses Haiku, and the split is the point.
+ * The same Flash-Lite model is used for the long read to stay within the free tier.
  * Compressing an abstract is mechanical; saying what a release changes for
  * someone building with it is judgement, and judgement is the one thing on
- * this site worth paying for. Rationing it to the top few stories is what
- * keeps that affordable: depth on four items costs less than shallow
- * summaries on forty would if they were written this way.
+ * this site worth adding. Rationing it to the top few stories keeps each
+ * edition focused and the free-tier request count predictable.
  *
  * The model still has not read the linked page — it sees the title and the
  * abstract, the same evidence the summariser had. So the prompt's hardest
@@ -16,11 +15,11 @@
  * against it.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
 import { Story, Analysis } from "./types.js";
+import { LanguageModel } from "./llm.js";
 
-/** Judgement, not compression — worth more than the summariser's model. */
-const DEFAULT_MODEL = "claude-sonnet-5";
+/** Keep analysis on the same no-cost tier by default. */
+const DEFAULT_MODEL = "gemini-3.1-flash-lite";
 
 const SYSTEM = [
   "You write the analysis section of a daily AI newsletter read by engineers",
@@ -89,7 +88,7 @@ function parseAnalysis(raw: string): Analysis | null {
 export async function analyseTop(
   stories: readonly Story[],
   depth: number,
-  client: Anthropic = new Anthropic(),
+  client: LanguageModel,
 ): Promise<{ stories: Story[]; usage: AnalysisUsage }> {
   const model = process.env.NEWSAI_ANALYSIS_MODEL ?? DEFAULT_MODEL;
   const usage: AnalysisUsage = { inputTokens: 0, outputTokens: 0, requests: 0 };
@@ -100,21 +99,17 @@ export async function analyseTop(
     if (!s) continue;
     const prompt = `Title: ${s.title}\nSource: ${s.source}\n\n${s.text ?? s.summary}`;
     try {
-      const response = await client.messages.create({
+      const response = await client.generate({
         model,
-        max_tokens: 2000,
         system: SYSTEM,
-        messages: [{ role: "user", content: prompt }],
+        prompt,
+        maxTokens: 2000,
       });
       usage.requests += 1;
-      usage.inputTokens += response.usage.input_tokens ?? 0;
-      usage.outputTokens += response.usage.output_tokens ?? 0;
+      usage.inputTokens += response.inputTokens;
+      usage.outputTokens += response.outputTokens;
 
-      const text = response.content
-        .filter((b): b is Anthropic.TextBlock => b.type === "text")
-        .map((b) => b.text)
-        .join("");
-      const analysis = parseAnalysis(text);
+      const analysis = parseAnalysis(response.text);
       // No analysis is fine — the story keeps its summary and its card.
       if (analysis) out[i] = { ...s, analysis };
     } catch (err) {

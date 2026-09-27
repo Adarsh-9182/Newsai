@@ -2,10 +2,10 @@
 
 AI news, analysed — agents first.
 
-A daily digest assembled from arXiv, Hacker News, GitHub and lab blogs. A small
-model summarises every story; a larger one writes a long read, with a mandatory
-"what this doesn't show" section, for the few that earn it. Published as static
-HTML: no database, no server, no client-side JavaScript.
+A daily digest assembled from arXiv, Hacker News, GitHub and lab blogs. A model
+summarises every story and writes a long read, with a mandatory "what this
+doesn't show" section, for the few that earn it. News pages are static HTML;
+small client-side features use a separate API and Postgres-backed accounts.
 
 ## How it works
 
@@ -15,8 +15,8 @@ arXiv · Hacker News · GitHub · lab blogs (RSS/Atom)
         ├─ dedupe within the run, and against everything already published
         ├─ rank by the source's own signal (HN points, stars) decayed by age
         ├─ cap at NEWSAI_MAX_STORIES before spending anything
-        ├─ summarise in batches (Claude Haiku 4.5)
-        ├─ analyse the top NEWSAI_ANALYSIS_DEPTH stories (Claude Sonnet 5)
+        ├─ summarise in batches (Gemini 3.1 Flash-Lite)
+        ├─ analyse the top NEWSAI_ANALYSIS_DEPTH stories (Gemini 3.1 Flash-Lite)
         │
         └─ data/YYYY-MM-DD.json  ──git commit──▶  Vercel deploy ──▶ public/index.html
 ```
@@ -64,23 +64,23 @@ npm run preview     # http://localhost:3000, fictional sample data only
 
 ## Cost
 
-The models are the only thing that costs money. Depth is rationed, which is what
-keeps it cheap: Haiku summarises everything (25 stories ≈ 4 batched requests),
-and Sonnet writes a long read for only `NEWSAI_ANALYSIS_DEPTH` (default 5).
-Both ceilings apply *before* anything is sent, so a dramatic news day costs the
-same as a quiet one. Actions, Vercel and all the sources are free.
+The pipeline uses Google's free Gemini API tier by default: summaries run in
+batches (25 stories ≈ 4 requests), and long reads run only for
+`NEWSAI_ANALYSIS_DEPTH` (default 5). The free tier has provider-set quotas and
+availability limits; if every summary request fails, the run preserves the
+archive instead of silently publishing an empty digest. Google says unpaid-tier
+prompts and responses may be used to improve its products; only public feed
+titles and text are sent.
 
-**These figures are unmeasured.** The summariser and analyser have not yet run
-against the live API; the first real run prints token counts, and that is the
-number to trust.
+Token usage from successful requests is printed in the workflow log.
 
-`NEWSAI_MODEL` (summaries) and `NEWSAI_ANALYSIS_MODEL` (long reads) override the defaults.
+`NEWSAI_SUMMARY_MODEL` and `NEWSAI_ANALYSIS_MODEL` override the defaults.
 
 ## Running it
 
 ```bash
 npm install
-cp .env.example .env        # add ANTHROPIC_API_KEY
+cp .env.example .env        # paste your key from https://aistudio.google.com/apikey
 npm run daily               # digest + render
 open public/index.html
 ```
@@ -106,7 +106,7 @@ open public/index.html
    `DATABASE_URL`, `NEWSAI_MAIL_SECRET`, `RESEND_API_KEY`, `NEWSAI_SITE_URL`.
    Tables are created on the first request.
 4. Set the Actions secrets under **GitHub → Settings → Secrets and variables →
-   Actions**: `ANTHROPIC_API_KEY`, and — to send mail — `DATABASE_URL`,
+   Actions**: `GEMINI_API_KEY`, and — to send mail — `DATABASE_URL`,
    `RESEND_API_KEY` and `NEWSAI_MAIL_SECRET`. **`NEWSAI_MAIL_SECRET` must be
    the same string in both places**, or links made by one are rejected by the
    other. The send step skips itself when they are missing.

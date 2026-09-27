@@ -6,7 +6,7 @@
 # else needs to be running anywhere.
 #
 # Secrets, all under Settings → Secrets and variables → Actions:
-#   ANTHROPIC_API_KEY   summaries and the long read
+#   GEMINI_API_KEY      summaries and the long read (Google AI Studio free tier)
 #   DATABASE_URL        the subscriber list (Neon or Supabase)
 #   NEWSAI_MAIL_SECRET  signs confirm/unsubscribe links — must match the site's
 #   RESEND_API_KEY      sending. Without it the send step prints and mails nobody.
@@ -24,6 +24,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: daily-digest-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   digest:
     runs-on: ubuntu-latest
@@ -40,11 +44,20 @@ jobs:
           node-version: "24"
           cache: npm
 
+      - name: Require the Gemini API key
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "GEMINI_API_KEY is missing. Add it under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
       - run: npm ci
 
       - name: Build the digest
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           NEWSAI_MAX_STORIES: "25"
         run: npm run daily
 
