@@ -121,7 +121,7 @@ ${o.noindex ? '<meta name="robots" content="noindex">\n' : ""}<link rel="alterna
 <body>
 <div class="bg" aria-hidden="true"><i></i><i></i><i></i></div>
 <nav class="top"><div class="wrap in">
-  <a class="brand" href="/"><i></i>${SITE_NAME}<small>.co.in</small></a>
+  <a class="brand" href="/"><i></i>${SITE_NAME}</a>
   <ul>${nav}</ul>
   <div class="nav-r">
     <button class="searchbtn" type="button" data-open-palette aria-label="Search">${ICON.search}<span>Search stories…</span><kbd>⌘K</kbd></button>
@@ -132,7 +132,7 @@ ${o.noindex ? '<meta name="robots" content="noindex">\n' : ""}<link rel="alterna
 ${o.body}
 <footer class="site"><div class="wrap in">
   <div>
-    <a class="brand" href="/" style="margin-bottom:14px"><i></i>${SITE_NAME}<small>.co.in</small></a>
+    <a class="brand" href="/" style="margin-bottom:14px"><i></i>${SITE_NAME}</a>
     <p>Assembled daily from arXiv, Hacker News, GitHub and lab blogs. Summaries and analysis are
     written by a language model from each item's own title and abstract &mdash; it has not read the
     linked page &mdash; and can be wrong. Follow the link before you rely on anything.</p>
