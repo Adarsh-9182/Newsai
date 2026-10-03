@@ -44,7 +44,9 @@ export function postgresStore(db: Db): Store {
   return {
     async createUser({ email, name, passwordHash }) {
       const rows = await db.query<UserRow>(
-        `insert into users (id, email, name, password_hash) values (gen_random_uuid(), $1, $2, $3)
+        `insert into users (id, email, name, password_hash, digest)
+         values (gen_random_uuid(), $1, $2, $3,
+           exists (select 1 from subscribers where email = $1 and confirmed_at is not null and unsubscribed_at is null))
          on conflict (email) do nothing returning ${USER_COLS}`,
         [email, name, passwordHash],
       );
@@ -125,6 +127,7 @@ export function postgresStore(db: Db): Store {
          on conflict (email) do update set confirmed_at = now(), unsubscribed_at = null`,
         [email],
       );
+      await db.query("update users set digest = true where email = $1", [email]);
     },
     async unsubscribe(email) {
       await db.query("update subscribers set unsubscribed_at = now() where email = $1 and unsubscribed_at is null", [email]);

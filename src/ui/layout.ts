@@ -66,6 +66,7 @@ export interface PageOpts {
   readonly type?: "website" | "article";
   /** Account pages are private and per-user: keep them out of search indexes. */
   readonly noindex?: boolean;
+  readonly structuredData?: Record<string, unknown>;
 }
 
 const NAV: ReadonlyArray<readonly [string, string]> = [
@@ -112,6 +113,8 @@ ${o.noindex ? '<meta name="robots" content="noindex">\n' : ""}<link rel="alterna
 <meta property="og:url" content="${esc(url)}">
 <meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#141414">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+${o.structuredData ? `<script type="application/ld+json">${JSON.stringify(o.structuredData).replace(/</g, "\\u003c")}</script>` : ""}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="${FONTS_HREF}">
@@ -128,7 +131,9 @@ ${o.noindex ? '<meta name="robots" content="noindex">\n' : ""}<link rel="alterna
     <button class="iconbtn" type="button" data-theme-toggle aria-label="Toggle theme">${ICON.theme}</button>
     <div id="auth"><a class="btn sm" href="/login/">Sign in</a><a class="btn sm primary" href="/signup/">Get started</a></div>
   </div>
-</div></nav>
+</div>
+<details class="mobile-nav"><summary>Explore newsai</summary><div class="links"><a href="/">Latest</a><a href="/archive/">Archive</a><a href="/about/">How it works</a></div></details>
+</nav>
 ${o.body}
 <footer class="site"><div class="wrap in">
   <div>

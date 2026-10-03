@@ -13,7 +13,7 @@ small client-side features use a separate API and Postgres-backed accounts.
 arXiv · Hacker News · GitHub · lab blogs (RSS/Atom)
         │
         ├─ dedupe within the run, and against everything already published
-        ├─ rank by the source's own signal (HN points, stars) decayed by age
+        ├─ rank by source-normalized signal, decay by age, balance sources
         ├─ cap at NEWSAI_MAX_STORIES before spending anything
         ├─ summarise in batches (Gemini 3.1 Flash-Lite)
         ├─ analyse the top NEWSAI_ANALYSIS_DEPTH stories (Gemini 3.1 Flash-Lite)
@@ -74,6 +74,11 @@ titles and text are sent.
 
 Token usage from successful requests is printed in the workflow log.
 
+A successful edition is published once per UTC day. Re-running that day's
+pipeline keeps the existing edition and skips source and model requests, so a
+workflow retry cannot replace stories readers have already seen. A failed run
+that never published an edition can still be retried.
+
 `NEWSAI_SUMMARY_MODEL` and `NEWSAI_ANALYSIS_MODEL` override the defaults.
 
 ## Running it
@@ -88,6 +93,7 @@ open public/index.html
 | Script | Does |
 |---|---|
 | `npm run digest` | Fetch, dedupe, summarise, write `data/<today>.json` |
+| `npm run sources` | Read-only source and ranking check; no key, publishing, or mail |
 | `npm run render` | Rebuild `public/index.html` from the archive |
 | `npm run daily`  | Both |
 | `npm run preview` | Render fictional sample data and serve it, with a working `/api` on an in-memory database, on :3000 |
@@ -155,6 +161,19 @@ A confirmation is sent **once per subscription**, never once a day: an address
 that is added and never confirmed is mailed a single time and then left alone,
 because it has consented to nothing. Unsubscribing and subscribing again counts
 as a new subscription and earns a fresh link.
+
+When `RESEND_API_KEY` and `NEWSAI_MAIL_SECRET` are configured on the API, the
+subscription request sends its confirmation immediately. The scheduled sender
+retries pending deliveries using the same claim, including on days without a
+digest. If delivery is unavailable, the page reports that it is pending.
+The account digest switch enrols an address with confirmation when turned on
+and unsubscribes it when turned off. Confirmation also updates that account's
+preference; changing followed topics does not change subscription consent.
+
+Popularity is compared within each source using a logarithmic scale, then
+decayed over 48 hours. Initially each source gets at most one third of the
+edition (rounded up); unused slots are filled from the remaining ranked items.
+This keeps research and lab updates in the mix without treating stars as votes.
 
 `npm run send` mails the day's digest to confirmed addresses, and is **safe to
 re-run**: each address is claimed in the database before it is mailed, so a

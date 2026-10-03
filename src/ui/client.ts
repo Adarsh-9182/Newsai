@@ -149,7 +149,12 @@ export const APP_JS = String.raw`(function () {
     });
   }
   function savePrefs(next) {
-    return api("PUT", "/api/prefs", next).then(function (j) { state.user = j.user; stash("nai_user", j.user); return j.user; });
+    return api("PUT", "/api/prefs", next).then(function (j) {
+      state.user = j.user; stash("nai_user", j.user);
+      if (j.delivery === "sent" || j.delivery === "already_sent") toast("Check your inbox to confirm the daily digest.");
+      if (j.delivery === "queued") toast("Email delivery is pending. Your request is saved.");
+      return j.user;
+    });
   }
   $$("[data-follow]").forEach(function (b) {
     b.addEventListener("click", function () {
@@ -191,7 +196,7 @@ export const APP_JS = String.raw`(function () {
         // Nothing is sent until the address is confirmed from its own inbox,
         // so the reply asks for that rather than claiming a subscription.
         var already = j && j.status === "confirmed";
-        if (msg) { msg.textContent = already ? "You're already subscribed — the next digest lands at 07:00 IST." : "Almost there: check your inbox for a confirmation link."; msg.className = "fineprint ok"; }
+        if (msg) { msg.textContent = already ? "You're already subscribed to the daily digest." : j.delivery === "queued" ? "Your request is saved. Confirmation email delivery is pending." : "Almost there: check your inbox for a confirmation link."; msg.className = "fineprint ok"; }
       }).catch(function (err) {
         var closed = err.code === "no_database";
         if (msg) { msg.textContent = closed ? "Subscriptions open very soon — check back shortly." : err.message; msg.className = "fineprint err"; }

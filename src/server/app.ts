@@ -20,6 +20,13 @@ import { Store, User } from "./types.js";
 import { TAGS } from "../tags.js";
 import { hashPassword, verifyPassword, DUMMY_HASH, newToken, hashToken } from "./crypto.js";
 import { mailSecret, readToken } from "./maillink.js";
+import { Mailer, resendMailer } from "./mailer.js";
+import { sendConfirmation } from "./confirmation.js";
+
+export interface AppOptions {
+  readonly mailer?: Mailer;
+  readonly mailSecret?: string;
+}
 
 const COOKIE = "nai_session";
 const SESSION_DAYS = 30;
@@ -155,10 +162,22 @@ async function startSession(req: Request, store: Store, user: User): Promise<Res
   return json(200, { user: publicUser(user) }, { "set-cookie": sessionCookie(req, token, SESSION_DAYS * 86_400) });
 }
 
-export async function handle(req: Request, store: Store | null): Promise<Response> {
+export async function handle(req: Request, store: Store | null, options: AppOptions = {}): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
   const method = req.method.toUpperCase();
+  const secret = options.mailSecret ?? mailSecret();
+  const mailer = options.mailer ?? (process.env.RESEND_API_KEY ? resendMailer(process.env.RESEND_API_KEY) : null);
+  const site = (process.env.NEWSAI_SITE_URL ?? url.origin).replace(/\/$/, "");
+  const confirm = async (addr: string) => {
+    if (!store || !secret || !mailer) return "queued";
+    try {
+      return await sendConfirmation(store, addr, site, secret, mailer) ? "sent" : "already_sent";
+    } catch {
+      // The claim was released; the scheduled job can retry without losing the subscription.
+      return "queued";
+    }
+  };
 
   try {
     if (!path.startsWith("/api/")) throw new HttpError(404, "not_found", "Not found.");
@@ -211,10 +230,10 @@ export async function handle(req: Request, store: Store | null): Promise<Respons
     // — newsletter, no account needed —
     if (path === "/api/subscribe" && method === "POST") {
       if (!(await store.hit(`sub:${ip}`, 10, 3600))) throw new HttpError(429, "rate_limited", "Too many requests.");
-      const status = await store.subscribe(email((await body(req)).email));
-      // The reply says the same thing whatever the status: whether an address
-      // is already on this list is not something a stranger gets to find out.
-      return json(200, { ok: true, status });
+      const addr = email((await body(req)).email);
+      const status = await store.subscribe(addr);
+      const delivery = status === "confirmed" ? "confirmed" : await confirm(addr);
+      return json(200, { ok: true, status, delivery });
     }
 
     // — the links inside an email —
@@ -224,7 +243,6 @@ export async function handle(req: Request, store: Store | null): Promise<Respons
     // that, and the reply is a small HTML page rather than JSON because a
     // person is looking at it.
     if ((path === "/api/mail/confirm" || path === "/api/mail/unsubscribe") && (method === "GET" || method === "POST")) {
-      const secret = mailSecret();
       const purpose = path.endsWith("confirm") ? "confirm" : "unsubscribe";
       const addr = secret ? readToken(secret, purpose, url.searchParams.get("t") ?? "") : null;
       if (!addr) {
@@ -272,7 +290,17 @@ export async function handle(req: Request, store: Store | null): Promise<Respons
       if (follows.some((t) => !(TAGS as readonly string[]).includes(t))) throw bad("Unknown tag.");
       if (typeof b.digest !== "boolean") throw bad("digest must be true or false.");
       const updated = await store.setPrefs(user.id, { follows, digest: b.digest });
-      return json(200, { user: updated ? publicUser(updated) : null });
+      let delivery: string | undefined;
+      if (b.digest !== user.digest) {
+        if (b.digest) {
+          const status = await store.subscribe(user.email);
+          delivery = status === "confirmed" ? "confirmed" : await confirm(user.email);
+        } else {
+          await store.unsubscribe(user.email);
+          delivery = "disabled";
+        }
+      }
+      return json(200, { user: updated ? publicUser(updated) : null, delivery });
     }
 
     throw new HttpError(404, "not_found", "Not found.");

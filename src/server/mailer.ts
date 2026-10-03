@@ -55,6 +55,7 @@ export function resendMailer(apiKey: string, fetchImpl: typeof fetch = fetch): M
             ? { headers: { "List-Unsubscribe": `<${mail.unsubscribeUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } }
             : {}),
         }),
+        signal: AbortSignal.timeout(8_000),
       });
       if (!res.ok) {
         // The body carries the provider's reason; the address must not be

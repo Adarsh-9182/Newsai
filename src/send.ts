@@ -15,10 +15,10 @@
 
 import { readArchive, today } from "./archive.js";
 import { storeFromEnv } from "./server/store/index.js";
-import { CONFIRM_CLAIM } from "./server/types.js";
 import { mailerFromEnv } from "./server/mailer.js";
-import { digestEmail, confirmEmail } from "./server/emails.js";
-import { mailSecret, confirmUrl, unsubscribeUrl } from "./server/maillink.js";
+import { digestEmail } from "./server/emails.js";
+import { mailSecret, unsubscribeUrl } from "./server/maillink.js";
+import { sendConfirmation } from "./server/confirmation.js";
 import { SITE_URL } from "./ui/layout.js";
 
 /** A pause between sends, to stay under a provider's per-second limit. */
@@ -33,11 +33,6 @@ export async function send(date = today()): Promise<{ sent: number; failed: numb
   if (!store) throw new Error("DATABASE_URL is not set — there is no subscriber list to send to.");
 
   const digest = (await readArchive()).find((d) => d.date === date);
-  if (!digest) throw new Error(`No digest for ${date}. Run the pipeline first.`);
-  if (digest.stories.length === 0) {
-    console.log(`${date} has no stories — nothing to send.`);
-    return { sent: 0, failed: 0, confirmations: 0 };
-  }
 
   const mailer = mailerFromEnv();
   console.log(`Sending ${date} via ${mailer.name} as ${SITE_URL}`);
@@ -46,16 +41,17 @@ export async function send(date = today()): Promise<{ sent: number; failed: numb
   let confirmations = 0;
   for (const email of await store.pendingSubscribers()) {
     // Dateless: one confirmation per subscription, not one per day.
-    if (!(await store.claimSend(CONFIRM_CLAIM, email))) continue;
     try {
-      const mail = confirmEmail(confirmUrl(SITE_URL, secret, email));
-      await mailer.send({ to: email, subject: mail.subject, html: mail.html, text: mail.text });
-      confirmations += 1;
+      if (await sendConfirmation(store, email, SITE_URL, secret, mailer)) confirmations += 1;
     } catch (err) {
-      await store.releaseSend(CONFIRM_CLAIM, email);
       console.warn(`  confirmation to ${email} failed: ${err}`);
     }
     await sleep(GAP_MS);
+  }
+
+  if (!digest || digest.stories.length === 0) {
+    console.log(`${date} has no digest; pending confirmations were processed.`);
+    return { sent: 0, failed: 0, confirmations };
   }
 
   let sent = 0;

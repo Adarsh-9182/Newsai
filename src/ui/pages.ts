@@ -36,34 +36,7 @@ function lead(s: Story): string {
 </div>`;
 }
 
-const SOURCES = ["arXiv", "Hacker News", "GitHub", "OpenAI", "Google DeepMind", "Google AI", "Hugging Face", "Microsoft Research", "Together AI", "Simon Willison"];
-
-/**
- * Today's stories as bars, where bar length is the source's own count (HN
- * points, GitHub stars). It is the ranking made visible: nothing on it is
- * generated, and stories without a count (arXiv) are simply not on it.
- */
-function signalBoard(stories: readonly Story[]): string {
-  const ranked = stories.filter((s) => s.signal > 0).sort((a, b) => b.signal - a.signal).slice(0, 5);
-  const max = ranked[0]?.signal ?? 1;
-  const rows = ranked
-    .map((s, i) => {
-      const href = s.analysis && s.slug ? `/story/${s.slug}/` : safeUrl(s.url);
-      const unit = s.source === "GitHub" ? "★" : "pts";
-      return `<li style="--i:${i};--w:${Math.max(4, Math.round((s.signal / max) * 100))}%"><a href="${esc(href)}">
-    <span class="n">0${i + 1}</span>
-    <span class="t"><span>${esc(s.title)}</span><span class="bar-track"><span class="bar-fill"></span></span></span>
-    <span class="v">${s.signal.toLocaleString("en-IN")} ${unit}</span></a></li>`;
-    })
-    .join("");
-  return `<aside class="board rise" aria-label="Today's signal">
-  <header><i></i><i></i><i></i><b>signal · today</b></header>
-  ${rows ? `<ol>${rows}</ol>` : '<p class="empty" style="padding:40px 0">No ranked stories yet.</p>'}
-  <footer>bar = HN points or GitHub stars &mdash; measured, not generated</footer>
-</aside>`;
-}
-
-/** The front page: hero, signal board, the lead, today's grid, recent days, how it works. */
+/** The front page: compact introduction, latest news, recent days, and subscription. */
 export function home(digests: readonly Digest[]): string {
   const today = digests[0];
   const stories = today?.stories ?? [];
@@ -78,32 +51,21 @@ export function home(digests: readonly Digest[]): string {
     )
     .join("\n");
 
-  const marquee = [...SOURCES, ...SOURCES].map((n) => `<span>${esc(n)}</span>`).join("");
-
   const body = `<main class="wrap">
-  <section class="hero">
-    <div>
-      <p class="eyebrow rise">${today ? esc(shortDate(today.date)) : "soon"} &middot; ${stories.length} stories &middot; ${deepCount} deep reads</p>
-      <h1 class="rise">Everything in AI, <em>actually analysed.</em></h1>
-      <p class="lede rise">Papers, releases and agent tooling from arXiv, Hacker News, GitHub and the labs &mdash;
-      ranked by what people really read, each with an honest note on what it doesn't prove.</p>
-      <form class="inline-form rise" data-subscribe novalidate>
-        <input class="input" type="email" name="email" placeholder="you@company.com" autocomplete="email" aria-label="Email address" required>
-        <button class="btn primary" type="submit">Get the daily digest</button>
-      </form>
-      <p class="fineprint" data-subscribe-msg>Free. 07:00 IST. One email a day, unsubscribe in one click.</p>
-    </div>
-    ${signalBoard(stories)}
+  <section class="news-intro">
+    <p class="eyebrow">${today ? esc(shortDate(today.date)) : "first edition pending"} &middot; ${stories.length} stories &middot; ${deepCount} analyses</p>
+    <h1>AI news. <em>Context included.</em></h1>
+    <p>Research, releases and tools for builders. AI summaries from source titles and abstracts, with caveats and links to the originals.</p>
   </section>
-  <div class="marquee" aria-hidden="true"><div>${marquee}</div></div>
-  <div class="bar"><h2>${today ? esc(longDate(today.date)) : "Today"}</h2><div class="chips" id="filter-chips">${chips()}</div></div>
-  ${first ? lead(first) : '<p class="empty">No digest yet &mdash; the first run publishes at 07:00 IST.</p>'}
+  ${today && Date.now() - new Date(`${today.date}T00:00:00Z`).getTime() > 2 * 86_400_000 ? `<p class="edition-notice" role="status">Latest available edition: ${esc(longDate(today.date))}. A newer edition has not been published yet.</p>` : ""}
+  <div class="bar"><h2>Latest edition${today ? ` &middot; ${esc(longDate(today.date))}` : ""}</h2><div id="filter-chips">${chips()}</div></div>
+  ${first ? lead(first) : '<p class="empty">The first edition is being prepared. Explore topics or subscribe below for updates.</p>'}
   ${rest.length ? `<div class="grid">${rest.map(card).join("\n")}</div>` : ""}
   ${older}
 
   <section class="bento" aria-label="How newsai works">
     <div class="tile spot wide"><span class="num">01 / RANKING</span><h3>Ordered by measurement, not by a model's opinion.</h3>
-      <p>Hacker News points and GitHub stars are decayed by age. A model asked to score importance would be guessing at something that has already been counted.</p>
+      <p>Popularity is normalized within each source and decayed by age. A source cap keeps a busy repository feed from crowding out research and lab updates.</p>
 <pre><i>$</i> rank --by <b>signal</b> --decay <b>48h</b>
 <i>#</i> the model never sees the ranking</pre></div>
     <div class="tile spot"><span class="num">02 / HONESTY</span><h3>Every analysis ends with what it doesn't show.</h3>
@@ -130,7 +92,7 @@ export function home(digests: readonly Digest[]): string {
   return shell({
     title: SITE_NAME,
     description: today
-      ? `${stories.length} things in AI on ${longDate(today.date)}, with analysis of the ${deepCount} that matter.`
+      ? `${stories.length} things in AI on ${longDate(today.date)}, with ${deepCount} analyses based on source titles and abstracts.`
       : TAGLINE,
     path: "/",
     body,
@@ -175,6 +137,13 @@ export function storyPage(s: Story, date: string): string {
     path: `/story/${s.slug}/`,
     body,
     type: "article",
+    structuredData: {
+      "@context": "https://schema.org", "@type": "NewsArticle",
+      headline: s.title, description: s.summary, datePublished: date,
+      mainEntityOfPage: `${SITE_URL}/story/${s.slug}/`,
+      isBasedOn: safeUrl(s.url),
+      publisher: { "@type": "Organization", name: SITE_NAME, url: SITE_URL },
+    },
   });
 }
 
@@ -245,7 +214,7 @@ export function aboutPage(): string {
   paywall and nothing is rewritten from another newsletter.</p>
   <h2>What ranks a story</h2>
   <p><strong>Not the model.</strong> Order comes from numbers the sources already measured &mdash; Hacker News
-  points and GitHub stars &mdash; decayed by age. A model asked to score importance would be guessing at
+  points and GitHub stars, normalized within each source and decayed by age. Source caps keep the edition varied. A model asked to score importance would be guessing at
   something that has already been counted.</p>
   <h2>What the model does</h2>
   <p>It compresses. Gemini 3.1 Flash-Lite writes the one-line summary of every story and the long read
@@ -359,7 +328,7 @@ export function accountPage(): string {
     <h2>Your feed <span class="saved-flag" id="prefs-flag">saved ✓</span></h2>
     <p>Follow topics and the front page leads with them.</p>
     <div class="toggles" id="follow-toggles">${ALL_TAGS.map((t) => `<button class="toggle" type="button" data-tag="${t}" aria-pressed="false">${t}</button>`).join("")}</div>
-    <div class="switch"><div><b>Daily digest by email</b><span>The deep reads at 07:00 IST. Off until you turn it on.</span></div>
+    <div class="switch"><div><b>Daily digest by email</b><span>Delivery targets 07:00 IST. Confirm your email after turning this on.</span></div>
       <button class="sw" id="digest-switch" type="button" role="switch" aria-checked="false" aria-label="Daily digest by email"></button></div>
   </section>
   <section class="panel">

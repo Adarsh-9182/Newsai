@@ -21,7 +21,9 @@ export function memoryStore(): Store {
     async createUser({ email, name, passwordHash }) {
       if (byEmail.has(email)) return null;
       const u: UserWithHash = {
-        id: randomUUID(), email, name, passwordHash, follows: [], digest: false, createdAt: new Date().toISOString(),
+        id: randomUUID(), email, name, passwordHash, follows: [],
+        digest: !!subscribers.get(email)?.confirmed && !subscribers.get(email)?.unsubscribed,
+        createdAt: new Date().toISOString(),
       };
       users.set(u.id, u);
       byEmail.set(email, u.id);
@@ -80,6 +82,9 @@ export function memoryStore(): Store {
     },
     async confirmSubscriber(email) {
       subscribers.set(email, { confirmed: true, unsubscribed: false });
+      const id = byEmail.get(email);
+      const u = id ? users.get(id) : undefined;
+      if (id && u) users.set(id, { ...u, digest: true });
     },
     async unsubscribe(email) {
       const cur = subscribers.get(email);

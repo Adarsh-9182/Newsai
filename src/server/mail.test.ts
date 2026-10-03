@@ -15,6 +15,7 @@ import { CONFIRM_CLAIM } from "./types.js";
 import { digestEmail, confirmEmail } from "./emails.js";
 import { resendMailer, Mailer, Mail } from "./mailer.js";
 import { Digest } from "../types.js";
+import { sendConfirmation } from "./confirmation.js";
 
 const SECRET = "test-secret-at-least-16-chars";
 const ORIGIN = "http://localhost:3000";
@@ -68,6 +69,62 @@ describe("signed mail links", () => {
 
 for (const [label, make] of [["memory", async () => memoryStore()], ["postgres (PGlite)", pgStore]] as const) {
   describe(`mailing list — ${label}`, () => {
+    test("creating an account preserves an existing confirmed subscription", async () => {
+      const store = await make();
+      await store.subscribe("ada@example.com");
+      await store.confirmSubscriber("ada@example.com");
+      const user = await store.createUser({ email: "ada@example.com", name: "Ada", passwordHash: "test-hash" });
+      assert.equal(user!.digest, true);
+    });
+    test("API sends confirmation immediately and retries a failed delivery without duplicates", async () => {
+      const store = await make();
+      const sent: Mail[] = [];
+      let fail = true;
+      const mailer: Mailer = { name: "test", send: async (mail) => {
+        if (fail) throw new Error("Provider unavailable");
+        sent.push(mail);
+      } };
+      const subscribe = () => handle(new Request(`${ORIGIN}/api/subscribe`, {
+        method: "POST", headers: { host: "localhost:3000", origin: ORIGIN, "content-type": "application/json" },
+        body: JSON.stringify({ email: "reader@example.com" }),
+      }), store, { mailer, mailSecret: SECRET });
+      assert.equal((await (await subscribe()).json() as any).delivery, "queued");
+      fail = false;
+      assert.equal((await (await subscribe()).json() as any).delivery, "sent");
+      assert.equal(sent.length, 1);
+      assert.match(sent[0]!.text, /\/api\/mail\/confirm/);
+      assert.equal((await (await subscribe()).json() as any).delivery, "already_sent");
+      assert.equal(await sendConfirmation(store, "reader@example.com", ORIGIN, SECRET, mailer), false);
+      assert.equal(sent.length, 1, "the scheduled job does not repeat the API's email");
+      assert.deepEqual(await store.confirmedRecipients(), [], "sending the link is not consent");
+    });
+
+    test("account digest toggle controls delivery and topic changes do not re-enrol", async () => {
+      const store = await make();
+      const sent: Mail[] = [];
+      const options = { mailSecret: SECRET, mailer: { name: "test", send: async (mail: Mail) => { sent.push(mail); } } };
+      const signup = await post("/api/auth/signup", { email: "ada@example.com", password: "correct horse battery" }, store);
+      const cookie = signup.headers.get("set-cookie")!.split(";")[0]!;
+      const prefs = (digest: boolean, follows: string[] = []) => handle(new Request(`${ORIGIN}/api/prefs`, {
+        method: "PUT", headers: { host: "localhost:3000", origin: ORIGIN, cookie, "content-type": "application/json" },
+        body: JSON.stringify({ digest, follows }),
+      }), store, options);
+      assert.equal((await (await prefs(true)).json() as any).delivery, "sent");
+      assert.equal(sent.length, 1);
+      assert.deepEqual(await store.pendingSubscribers(), ["ada@example.com"]);
+      process.env.NEWSAI_MAIL_SECRET = SECRET;
+      await get(confirmUrl("", SECRET, "ada@example.com"), store);
+      assert.deepEqual(await store.confirmedRecipients(), ["ada@example.com"]);
+      assert.equal((await store.userByEmail("ada@example.com"))!.digest, true);
+      await prefs(false);
+      assert.deepEqual(await store.confirmedRecipients(), []);
+      await prefs(false, ["agents"]);
+      assert.deepEqual(await store.pendingSubscribers(), []);
+      await prefs(true, ["agents"]);
+      assert.equal(sent.length, 2, "re-enabling asks for consent again");
+      assert.deepEqual(await store.confirmedRecipients(), []);
+    });
+
     test("subscribe → pending → confirm → confirmed, and unsubscribe removes", async () => {
       const store = await make();
       process.env.NEWSAI_MAIL_SECRET = SECRET;

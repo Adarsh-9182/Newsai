@@ -52,6 +52,7 @@ export async function render(): Promise<number> {
   await write("account/index.html", accountPage());
   await write("app.js", APP_JS);
   await write("theme.js", THEME_JS);
+  await write("favicon.svg", '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#141414"/><path d="M17 47V17h8l14 19V17h8v30h-8L25 28v19z" fill="#09aea1"/></svg>');
   await write("search.json", JSON.stringify(searchIndex(all)));
   await write("feed.xml", rss(all));
   await write("sitemap.xml", sitemap(all));

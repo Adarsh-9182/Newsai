@@ -6,18 +6,18 @@
  * only ever shown stories that are new and that will actually be published.
  * Nothing is paid for that a reader will not see.
  *
- * Ranking is done here rather than by the model: HN points and GitHub stars
- * are a measurement that already exists, and a model asked to score
- * importance would be guessing at it for money.
+ * Ranking uses source-normalized popularity, freshness, and a source cap.
+ * The model never decides importance or compares stars with votes.
  */
 
-import { RawItem, Digest } from "./types.js";
+import { Digest } from "./types.js";
 import { LanguageModel, gemini } from "./llm.js";
 import { collectAll } from "./sources/index.js";
 import { dedupeWithin, dropAlreadyPublished } from "./dedupe.js";
 import { summarise } from "./summarize.js";
 import { analyseTop } from "./analyse.js";
 import { readArchive, writeDigest, today } from "./archive.js";
+import { selectStories } from "./rank.js";
 
 /** Hard ceiling on a run, so a busy news day cannot cost a surprising amount. */
 const DEFAULT_MAX = 25;
@@ -33,23 +33,6 @@ function limit(name: string, fallback: number, maximum: number, minimum = 0): nu
     throw new Error(`${name} must be an integer from ${minimum} to ${maximum}.`);
   }
   return Math.min(value, maximum);
-}
-
-/**
- * Recency decays the source's own signal rather than replacing it: a story
- * with 400 points from yesterday should still outrank a fresh one with 45,
- * but not forever.
- */
-function rank(items: readonly RawItem[]): RawItem[] {
-  const now = Date.now();
-  return [...items].sort((a, b) => score(b) - score(a));
-
-  function score(i: RawItem): number {
-    const ageHours = Math.max(0, (now - new Date(i.publishedAt).getTime()) / 3_600_000);
-    const freshness = Math.exp(-ageHours / 48);
-    // A floor keeps arXiv, which has no votes, in the running on recency alone.
-    return (i.signal + 25) * freshness;
-  }
 }
 
 /**
@@ -79,16 +62,23 @@ export async function runPipeline(client?: LanguageModel): Promise<Digest> {
   const max = limit("NEWSAI_MAX_STORIES", DEFAULT_MAX, DEFAULT_MAX, 1);
   const depth = limit("NEWSAI_ANALYSIS_DEPTH", DEFAULT_DEPTH, DEFAULT_DEPTH);
 
+  const past = await readArchive();
+  const date = today();
+  const published = past.find((d) => d.date === date && d.stories.length > 0);
+  if (published) {
+    console.log(`Already published ${published.stories.length} stories for ${date}; keeping this edition.`);
+    return published;
+  }
+
   console.log("Collecting…");
   const { items } = await collectAll();
   console.log(`  ${items.length} raw items`);
 
   const fresh = dedupeWithin(items);
-  const past = await readArchive();
   const unseen = dropAlreadyPublished(fresh, past);
   console.log(`  ${fresh.length} after dedupe, ${unseen.length} not yet published`);
 
-  const chosen = rank(unseen).slice(0, max);
+  const chosen = selectStories(unseen, max);
   if (chosen.length === 0) {
     console.log("Nothing new today.");
   }
@@ -103,7 +93,7 @@ export async function runPipeline(client?: LanguageModel): Promise<Digest> {
   const { stories: deep, usage: analysisUsage } = await analyseTop(stories, depth, model);
 
   const digest: Digest = {
-    date: today(),
+    date,
     generatedAt: new Date().toISOString(),
     // Preserve the ranking the sources earned; the summariser may drop items
     // but must never reorder them.
