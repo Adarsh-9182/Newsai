@@ -16,7 +16,7 @@ import { collectAll } from "./sources/index.js";
 import { dedupeWithin, dropAlreadyPublished } from "./dedupe.js";
 import { summarise } from "./summarize.js";
 import { analyseTop } from "./analyse.js";
-import { readArchive, writeDigest, today } from "./archive.js";
+import { readArchive, readArchiveAll, writeDigest, today } from "./archive.js";
 import { selectStories } from "./rank.js";
 
 /** Hard ceiling on a run, so a busy news day cannot cost a surprising amount. */
@@ -62,7 +62,7 @@ export async function runPipeline(client?: LanguageModel): Promise<Digest> {
   const max = limit("NEWSAI_MAX_STORIES", DEFAULT_MAX, DEFAULT_MAX, 1);
   const depth = limit("NEWSAI_ANALYSIS_DEPTH", DEFAULT_DEPTH, DEFAULT_DEPTH);
 
-  const past = await readArchive();
+  const past = await readArchiveAll();
   const date = today();
   const published = past.find((d) => d.date === date && d.stories.length > 0);
   if (published) {

@@ -9,6 +9,9 @@ small client-side features use a separate API and Postgres-backed accounts.
 
 ## How it works
 
+See [`docs/architecture.md`](docs/architecture.md) for the data-flow diagram,
+design invariants, launch gates, and the prioritized engineering roadmap.
+
 ```
 arXiv · Hacker News · GitHub · lab blogs (RSS/Atom)
         │

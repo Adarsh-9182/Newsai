@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Digest } from "./types.js";
 
 test("rerunning a published day preserves its edition without source or model requests", async () => {
   const dir = await mkdtemp(join(tmpdir(), "newsai-rerun-"));
@@ -33,6 +34,25 @@ test("rerunning a published day preserves its edition without source or model re
     globalThis.fetch = originalFetch;
     if (previousDir === undefined) delete process.env.NEWSAI_DATA_DIR;
     else process.env.NEWSAI_DATA_DIR = previousDir;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("public archive stays bounded while pipeline dedupe keeps the full history", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "newsai-history-"));
+  try {
+    const date = new Date(Date.now() - 800 * 86_400_000);
+    const edition: Digest = { date: "", generatedAt: "", stories: [] };
+    for (let i = 0; i < 405; i++) {
+      const day = new Date(date.getTime() + i * 86_400_000).toISOString().slice(0, 10);
+      await writeFile(join(dir, `${day}.json`), JSON.stringify({ ...edition, date: day, stories: [] }));
+    }
+    const { readArchive, readArchiveAll } = await import("./archive.js");
+    assert.equal((await readArchive(400, dir)).length, 400, "site keeps its bounded render window");
+    const complete = await readArchiveAll(dir);
+    assert.equal(complete.length, 405, "pipeline reads older editions for dedupe");
+    assert.ok(complete[404]!.date < complete[399]!.date, "the oldest edition remains available to dedupe");
+  } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });
