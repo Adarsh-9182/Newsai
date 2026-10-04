@@ -145,6 +145,16 @@ SHA-256; writes must be same-origin JSON (no CSRF token to get wrong); login and
 sign-up are rate limited in the database; and `vercel.json` sets a strict
 Content-Security-Policy (`script-src 'self'`).
 
+Password recovery is available at `/forgot-password/` when the API has
+`RESEND_API_KEY`. Reset replies do not reveal whether an account exists.
+Random reset tokens are stored only as SHA-256 hashes, expire after 30 minutes,
+and are replaced by a new request. Consumption is atomic and revokes all of
+the account's sessions. The reset page requires signing in again afterward.
+
+Account deletion requires the current password and explicit acknowledgement
+in the account page. It removes the user, sessions, reset token, saved stories,
+subscription and mail claims. It does not alter the public news archive.
+
 ## Email
 
 Subscribing is **double opt-in**: an address is stored the moment someone asks,

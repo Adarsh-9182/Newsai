@@ -7,7 +7,9 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { PGlite } from "@electric-sql/pglite";
-import { handle } from "./app.js";
+import { handle, AppOptions } from "./app.js";
+import { hashToken, newToken } from "./crypto.js";
+import { Mail } from "./mailer.js";
 import { Store } from "./types.js";
 import { memoryStore } from "./store/memory.js";
 import { postgresStore, migrate, Db } from "./store/postgres.js";
@@ -23,7 +25,7 @@ async function pgStore(): Promise<Store> {
 }
 
 /** A tiny cookie-keeping client, so tests read like a browser session. */
-function client(store: Store) {
+function client(store: Store, options: AppOptions = {}) {
   let cookie = "";
   return async (method: string, path: string, data?: unknown, headers: Record<string, string> = {}) => {
     const res = await handle(
@@ -35,7 +37,7 @@ function client(store: Store) {
         },
         body: data === undefined ? undefined : JSON.stringify(data),
       }),
-      store,
+      store, options,
     );
     const set = res.headers.get("set-cookie");
     if (set) cookie = set.split(";")[0] ?? "";
@@ -47,6 +49,62 @@ const CREDS = { email: "Ada@Example.com", password: "correct horse battery", nam
 
 for (const [label, make] of [["memory", async () => memoryStore()], ["postgres (PGlite)", pgStore]] as const) {
   describe(label, () => {
+    test("account deletion requires the password and removes only that user's data", async () => {
+      const store = await make();
+      const a = client(store), b = client(store);
+      const user = (await a("POST", "/api/auth/signup", CREDS)).body.user;
+      await b("POST", "/api/auth/signup", { email: "bob@example.com", password: "bob secure password" });
+      await store.subscribe(user.email); await store.confirmSubscriber(user.email);
+      await store.addSave(user.id, { storyId: "x", title: "t", url: "https://example.com", source: "test", slug: null });
+      const token = newToken();
+      await store.createPasswordReset(user.email, hashToken(token), new Date(Date.now() + 60_000));
+      assert.equal((await a("DELETE", "/api/account", { password: "incorrect" })).status, 401);
+      assert.ok((await a("GET", "/api/me")).body.user);
+      assert.equal((await a("DELETE", "/api/account", { password: CREDS.password })).status, 200);
+      assert.equal(await store.userByEmail(user.email), null);
+      assert.deepEqual(await store.listSaves(user.id), []);
+      assert.deepEqual(await store.confirmedRecipients(), []);
+      assert.equal(await store.resetPassword(hashToken(token), "bad"), false);
+      assert.equal((await a("GET", "/api/me")).body.user, null);
+      assert.equal((await b("GET", "/api/me")).body.user.email, "bob@example.com");
+    });
+
+    test("password recovery changes the password once and revokes existing sessions", async () => {
+      const store = await make();
+      const mails: Mail[] = [];
+      const options = { mailer: { name: "test", send: async (mail: Mail) => { mails.push(mail); } } };
+      const c = client(store, options);
+      await c("POST", "/api/auth/signup", CREDS);
+      const known = await c("POST", "/api/auth/forgot", { email: CREDS.email });
+      const unknown = await c("POST", "/api/auth/forgot", { email: "unknown@example.com" });
+      assert.deepEqual(known.body, unknown.body, "reset replies do not reveal account existence");
+      assert.equal(mails.length, 1);
+      const link = mails[0]!.text.match(/https?:\/\/\S+/)![0];
+      const token = new URL(link).searchParams.get("token");
+      assert.ok(token);
+      const r = client(store);
+      assert.equal((await r("POST", "/api/auth/reset", { token, password: "short" })).status, 400);
+      assert.equal((await r("POST", "/api/auth/reset", { token, password: "a new secure password" })).status, 200);
+      assert.equal((await c("GET", "/api/me")).body.user, null, "old session was revoked");
+      assert.equal((await r("POST", "/api/auth/reset", { token, password: "replayed password" })).status, 400);
+      assert.equal((await r("POST", "/api/auth/login", CREDS)).status, 401);
+      assert.equal((await r("POST", "/api/auth/login", { email: CREDS.email, password: "a new secure password" })).status, 200);
+    });
+
+    test("expired and replaced reset tokens fail; concurrent consumption has one winner", async () => {
+      const store = await make();
+      await store.createUser({ email: "ada@example.com", name: "Ada", passwordHash: "original" });
+      const old = newToken(), fresh = newToken();
+      await store.createPasswordReset("ada@example.com", hashToken(old), new Date(Date.now() - 1000));
+      assert.equal(await store.resetPassword(hashToken(old), "expired"), false);
+      await store.createPasswordReset("ada@example.com", hashToken(old), new Date(Date.now() + 60_000));
+      await store.createPasswordReset("ada@example.com", hashToken(fresh), new Date(Date.now() + 60_000));
+      assert.equal(await store.resetPassword(hashToken(old), "replaced"), false);
+      const results = await Promise.all([store.resetPassword(hashToken(fresh), "new"), store.resetPassword(hashToken(fresh), "another")]);
+      assert.equal(results.filter(Boolean).length, 1);
+      assert.equal(await store.createPasswordReset("ghost@example.com", hashToken(newToken()), new Date()), false);
+    });
+
     test("signup → me → logout → me", async () => {
       const c = client(await make());
       const s = await c("POST", "/api/auth/signup", CREDS);

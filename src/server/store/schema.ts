@@ -30,6 +30,13 @@ create table if not exists sessions (
 );
 create index if not exists sessions_user_idx on sessions(user_id);
 
+create table if not exists password_resets (
+  user_id uuid primary key references users(id) on delete cascade,
+  token_hash text not null unique,
+  expires_at timestamptz not null
+);
+alter table password_resets enable row level security;
+
 create table if not exists saves (
   user_id  uuid not null references users(id) on delete cascade,
   story_id text not null,

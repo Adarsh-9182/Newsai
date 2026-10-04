@@ -15,7 +15,7 @@ import { writeFile, mkdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Digest } from "./types.js";
 import { readArchive } from "./archive.js";
-import { home, storyPage, tagPage, archivePage, dayPage, aboutPage, notFoundPage, loginPage, signupPage, accountPage, searchIndex, rss, sitemap, ALL_TAGS } from "./ui/pages.js";
+import { home, storyPage, tagPage, archivePage, dayPage, aboutPage, notFoundPage, loginPage, signupPage, accountPage, recoveryPage, searchIndex, rss, sitemap, ALL_TAGS } from "./ui/pages.js";
 import { APP_JS, THEME_JS } from "./ui/client.js";
 import { SITE_URL } from "./ui/layout.js";
 
@@ -50,6 +50,8 @@ export async function render(): Promise<number> {
   await write("login/index.html", loginPage());
   await write("signup/index.html", signupPage());
   await write("account/index.html", accountPage());
+  await write("forgot-password/index.html", recoveryPage());
+  await write("reset-password/index.html", recoveryPage(true));
   await write("app.js", APP_JS);
   await write("theme.js", THEME_JS);
   await write("favicon.svg", '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#141414"/><path d="M17 47V17h8l14 19V17h8v30h-8L25 28v19z" fill="#09aea1"/></svg>');

@@ -195,6 +195,35 @@ export async function handle(req: Request, store: Store | null, options: AppOpti
     }
 
     // — sign up / in / out —
+    if (path === "/api/auth/forgot" && method === "POST") {
+      const addr = email((await body(req)).email);
+      if (!(await store.hit(`reset-ip:${ip}`, 10, 3600)) || !(await store.hit(`reset:${addr}`, 3, 3600))) {
+        throw new HttpError(429, "rate_limited", "Too many requests. Try again later.");
+      }
+      if (mailer) {
+        const token = newToken();
+        const found = await store.createPasswordReset(addr, hashToken(token), new Date(Date.now() + 30 * 60_000));
+        if (found) {
+          const link = `${site}/reset-password/?token=${encodeURIComponent(token)}`;
+          try {
+            await mailer.send({ to: addr, subject: "Reset your newsai password",
+              text: `Reset your password: ${link}\nThis link expires in 30 minutes and works once. If you didn't request it, ignore this email.`,
+              html: `<p>A password reset was requested for your newsai account.</p><p><a href="${link.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;")}">Reset your password</a></p><p>This link expires in 30 minutes and works once. If you didn't request it, ignore this email.</p>`,
+            });
+          } catch { /* Same response for unknown accounts and failed delivery. */ }
+        }
+      }
+      return json(200, { ok: true, delivery: mailer ? "requested" : "unavailable" });
+    }
+    if (path === "/api/auth/reset" && method === "POST") {
+      if (!(await store.hit(`reset-use:${ip}`, 20, 900))) throw new HttpError(429, "rate_limited", "Too many attempts. Try again later.");
+      const b = await body(req);
+      const token = str(b.token, "token", 100);
+      if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw bad("This reset link is invalid or expired.");
+      const hash = await hashPassword(password(b.password));
+      if (!(await store.resetPassword(hashToken(token), hash))) throw bad("This reset link is invalid or expired.");
+      return json(200, { ok: true, "message": "Password updated. Sign in with your new password." }, { "set-cookie": sessionCookie(req, "", 0) });
+    }
     if (path === "/api/auth/signup" && method === "POST") {
       if (!(await store.hit(`signup:${ip}`, 10, 3600))) throw new HttpError(429, "rate_limited", "Too many sign-ups. Try again later.");
       const b = await body(req);
@@ -260,6 +289,16 @@ export async function handle(req: Request, store: Store | null, options: AppOpti
     // — everything below needs a session —
     const user = await currentUser(req, store);
     if (!user) throw new HttpError(401, "unauthenticated", "Sign in first.");
+
+    if (path === "/api/account" && method === "DELETE") {
+      if (!(await store.hit(`delete:${ip}`, 5, 900))) throw new HttpError(429, "rate_limited", "Too many attempts. Try again later.");
+      const b = await body(req);
+      const found = await store.userByEmail(user.email);
+      const pw = typeof b.password === "string" ? b.password.slice(0, 200) : "";
+      if (!found || !(await verifyPassword(pw, found.passwordHash))) throw new HttpError(401, "bad_credentials", "Password is incorrect.");
+      await store.deleteAccount(user.id);
+      return json(200, { ok: true }, { "set-cookie": sessionCookie(req, "", 0) });
+    }
 
     if (path === "/api/saves" && method === "GET") return json(200, { saves: await store.listSaves(user.id) });
 

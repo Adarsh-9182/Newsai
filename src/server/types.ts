@@ -61,6 +61,10 @@ export interface Store {
   /** The user behind a session token hash, if the session exists and has not expired. */
   sessionUser(tokenHash: string): Promise<User | null>;
   deleteSession(tokenHash: string): Promise<void>;
+  createPasswordReset(email: string, tokenHash: string, expiresAt: Date): Promise<boolean>;
+  /** Atomically consumes a valid token, changes the password and revokes all sessions. */
+  resetPassword(tokenHash: string, passwordHash: string): Promise<boolean>;
+  deleteAccount(userId: string): Promise<void>;
 
   listSaves(userId: string): Promise<Save[]>;
   addSave(userId: string, save: Omit<Save, "savedAt">): Promise<void>;

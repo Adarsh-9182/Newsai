@@ -236,7 +236,46 @@ export const APP_JS = String.raw`(function () {
     });
   });
 
+  // — password recovery —
+  $$("[data-recovery]").forEach(function (form) {
+    var mode = form.dataset.recovery, msg = $("[data-msg]", form), btn = $("button[type=submit]", form);
+    var token = new URLSearchParams(location.search).get("token");
+    if (mode === "reset" && !token) { msg.textContent = "This link is missing its reset token. Request a new link."; msg.className = "msg err"; btn.disabled = true; }
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var data = new FormData(form);
+      var body = mode === "forgot" ? { email: data.get("email") } : { token: token, password: data.get("password") };
+      if (mode === "forgot" && !/^\S+@\S+\.\S+$/.test(body.email || "")) { msg.textContent = "Enter a valid email address."; msg.className = "msg err"; return; }
+      if (mode === "reset" && (!body.password || body.password.length < 8)) { msg.textContent = "Password must be at least 8 characters."; msg.className = "msg err"; return; }
+      btn.disabled = true;
+      api("POST", "/api/auth/" + mode, body).then(function (j) {
+        msg.className = "msg ok";
+        if (mode === "reset") {
+          stash("nai_user", null); state.user = null; state.saved = null; renderAuth();
+          history.replaceState(null, "", location.pathname);
+          msg.textContent = "Password updated. Sign in with your new password.";
+          form.reset();
+        } else {
+          msg.textContent = j.delivery === "unavailable" ? "Password reset email is not available yet. Please try again later." : "If an account exists for this email, a reset link will be sent. Check your inbox.";
+          btn.disabled = false;
+        }
+      }).catch(function (err) { msg.textContent = err.message; msg.className = "msg err"; btn.disabled = false; });
+    });
+  });
+
   // — the account page —
+  $$("[data-delete-account]").forEach(function (form) {
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var data = new FormData(form), msg = $("[data-msg]", form), btn = $("button[type=submit]", form);
+      if (!data.get("password") || !data.get("confirm")) { msg.textContent = "Enter your password and confirm account deletion."; msg.className = "msg err"; return; }
+      btn.disabled = true;
+      api("DELETE", "/api/account", { password: data.get("password") }).then(function () {
+        stash("nai_user", null); location.replace("/");
+      }).catch(function (err) { msg.textContent = err.message; msg.className = "msg err"; btn.disabled = false; });
+    });
+  });
+
   function initAccount() {
     var page = $("#account");
     if (!page) return;

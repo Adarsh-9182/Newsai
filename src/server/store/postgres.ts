@@ -76,6 +76,37 @@ export function postgresStore(db: Db): Store {
     async deleteSession(tokenHash) {
       await db.query("delete from sessions where token_hash = $1", [tokenHash]);
     },
+    async createPasswordReset(email, tokenHash, expiresAt) {
+      const rows = await db.query<{ user_id: string }>(
+        `insert into password_resets (user_id, token_hash, expires_at)
+         select id, $2, $3::timestamptz from users where email = $1
+         on conflict (user_id) do update set token_hash = excluded.token_hash, expires_at = excluded.expires_at
+         returning user_id`, [email, tokenHash, expiresAt.toISOString()],
+      );
+      return rows.length > 0;
+    },
+    async resetPassword(tokenHash, passwordHash) {
+      const rows = await db.query<{ id: string }>(
+        `with consumed as (
+           delete from password_resets where token_hash = $1 and expires_at > now() returning user_id
+         ), updated as (
+           update users set password_hash = $2 where id in (select user_id from consumed) returning id
+         ), revoked as (
+           delete from sessions where user_id in (select id from updated)
+         ) select id from updated`, [tokenHash, passwordHash],
+      );
+      return rows.length > 0;
+    },
+    async deleteAccount(userId) {
+      await db.query(
+        `with deleted as (delete from users where id = $1 returning email),
+         mailing as (delete from subscribers where email in (select email from deleted)),
+         claims as (delete from digest_sends where email in (select email from deleted))
+         delete from rate_limits where key = 'write:' || $1::text
+           or key in (select 'login:' || email from deleted)
+           or key in (select 'reset:' || email from deleted)`, [userId],
+      );
+    },
 
     async listSaves(userId) {
       const rows = await db.query<{ story_id: string; title: string; url: string; source: string; slug: string | null; saved_at: Date | string }>(

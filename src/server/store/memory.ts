@@ -10,6 +10,7 @@ export function memoryStore(): Store {
   const users = new Map<string, UserWithHash>();
   const byEmail = new Map<string, string>();
   const sessions = new Map<string, { userId: string; expiresAt: number }>();
+  const resets = new Map<string, { tokenHash: string; expiresAt: number }>();
   const saves = new Map<string, Map<string, Save>>();
   const subscribers = new Map<string, { confirmed: boolean; unsubscribed: boolean }>();
   const sends = new Set<string>();
@@ -49,6 +50,33 @@ export function memoryStore(): Store {
     },
     async deleteSession(tokenHash) {
       sessions.delete(tokenHash);
+    },
+    async createPasswordReset(email, tokenHash, expiresAt) {
+      const id = byEmail.get(email);
+      if (!id) return false;
+      resets.set(id, { tokenHash, expiresAt: expiresAt.getTime() });
+      return true;
+    },
+    async resetPassword(tokenHash, passwordHash) {
+      for (const [id, reset] of resets) {
+        if (reset.tokenHash !== tokenHash || reset.expiresAt <= Date.now()) continue;
+        const user = users.get(id);
+        if (!user) return false;
+        resets.delete(id);
+        users.set(id, { ...user, passwordHash });
+        for (const [hash, session] of sessions) if (session.userId === id) sessions.delete(hash);
+        return true;
+      }
+      return false;
+    },
+    async deleteAccount(userId) {
+      const user = users.get(userId);
+      if (!user) return;
+      users.delete(userId); byEmail.delete(user.email); resets.delete(userId); saves.delete(userId);
+      subscribers.delete(user.email);
+      for (const [hash, session] of sessions) if (session.userId === userId) sessions.delete(hash);
+      for (const claim of sends) if (claim.endsWith(`|${user.email}`)) sends.delete(claim);
+      for (const key of [`login:${user.email}`, `reset:${user.email}`, `write:${userId}`]) limits.delete(key);
     },
 
     async listSaves(userId) {

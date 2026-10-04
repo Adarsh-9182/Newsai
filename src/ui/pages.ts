@@ -289,6 +289,7 @@ export function loginPage(): string {
       <button class="btn primary block" type="submit">Sign in</button>
     </form>
     <p class="alt">New here? <a href="/signup/" data-keep-next>Create an account</a></p>
+    <p class="alt"><a href="/forgot-password/">Forgot your password?</a></p>
   </div>
 </main>`;
   return shell({ title: "Sign in", description: "Sign in to newsai.", path: "/login/", body, noindex: true });
@@ -310,6 +311,21 @@ export function signupPage(): string {
   </div>
 </main>`;
   return shell({ title: "Create account", description: "Create a free newsai account.", path: "/signup/", body, noindex: true });
+}
+
+export function recoveryPage(reset = false): string {
+  const title = reset ? "Choose a new password" : "Reset your password";
+  const body = `<main class="auth" style="grid-template-columns:minmax(0,480px);justify-content:center">
+  <div class="authcard"><h1 style="font-size:28px">${title}</h1>
+    <p class="sub">${reset ? "Your reset link works once and expires after 30 minutes." : "Enter your account email to request a reset link."}</p>
+    <form data-recovery="${reset ? "reset" : "forgot"}" novalidate>
+      ${reset ? passwordField("new-password") : '<div class="field"><label for="email">Email</label><input class="input" id="email" name="email" type="email" autocomplete="email" required placeholder="you@company.com"></div>'}
+      <p class="msg" role="alert" data-msg></p>
+      <button class="btn primary block" type="submit">${reset ? "Update password" : "Send reset link"}</button>
+    </form>
+    <p class="alt"><a href="/login/">Back to sign in</a>${reset ? ' &middot; <a href="/forgot-password/">Request a new link</a>' : ""}</p>
+  </div></main>`;
+  return shell({ title, description: title, path: reset ? "/reset-password/" : "/forgot-password/", body, noindex: true });
 }
 
 /**
@@ -335,6 +351,16 @@ export function accountPage(): string {
     <h2>Saved stories <span class="k" id="saved-count"></span></h2>
     <p>Everything you've bookmarked, newest first.</p>
     <div id="saved-list"><div class="skel"></div><div class="skel"></div></div>
+  </section>
+  <section class="panel">
+    <h2>Delete your account</h2>
+    <p>This permanently removes your account, saved stories and preferences, signs you out on every device, and stops the newsletter.</p>
+    <form data-delete-account novalidate>
+      <div class="field"><label for="delete-password">Current password</label><input class="input" id="delete-password" name="password" type="password" autocomplete="current-password" required></div>
+      <label class="fineprint"><input type="checkbox" name="confirm" required> I understand this cannot be undone.</label>
+      <p class="msg" role="alert" data-msg></p>
+      <button class="btn" type="submit">Delete account and stop email</button>
+    </form>
   </section>
 </main>
 <main class="narrow" id="account-gate"><p class="empty" style="padding:120px 0">Checking your session&hellip;</p></main>`;
