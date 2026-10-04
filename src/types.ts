@@ -64,4 +64,15 @@ export interface Digest {
   readonly date: string;
   readonly generatedAt: string;
   readonly stories: readonly Story[];
+  readonly generation?: {
+    readonly summaryModel: string;
+    readonly analysisModel: string;
+    readonly summaryPromptVersion: string;
+    readonly analysisPromptVersion: string;
+    readonly sourceCounts: Readonly<Record<string, number>>;
+    readonly sourceFailures: readonly string[];
+    readonly collected: number;
+    readonly selected: number;
+    readonly summarized: number;
+  };
 }

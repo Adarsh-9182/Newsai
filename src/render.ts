@@ -14,8 +14,8 @@
 import { writeFile, mkdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Digest } from "./types.js";
-import { readArchive } from "./archive.js";
-import { home, storyPage, tagPage, archivePage, dayPage, aboutPage, notFoundPage, loginPage, signupPage, accountPage, recoveryPage, searchIndex, rss, sitemap, ALL_TAGS } from "./ui/pages.js";
+import { readArchiveAll } from "./archive.js";
+import { home, storyPage, tagPage, archivePage, dayPage, aboutPage, privacyPage, newsletterPage, notFoundPage, loginPage, signupPage, accountPage, recoveryPage, searchIndex, rss, sitemap, ALL_TAGS } from "./ui/pages.js";
 import { APP_JS, THEME_JS } from "./ui/client.js";
 import { SITE_URL } from "./ui/layout.js";
 
@@ -35,7 +35,8 @@ export async function render(): Promise<number> {
   // must not linger as an orphaned page.
   await rm(PUBLIC_DIR, { recursive: true, force: true });
 
-  const all: Digest[] = await readArchive();
+  // Bookmarks and old links must remain valid after the archive exceeds 400 days.
+  const all: Digest[] = await readArchiveAll();
   let pages = 0;
   const write = async (path: string, html: string) => {
     await put(path, html);
@@ -45,6 +46,8 @@ export async function render(): Promise<number> {
   await write("index.html", home(all.slice(0, DAYS_ON_HOME)));
   await write("archive/index.html", archivePage(all));
   await write("about/index.html", aboutPage());
+  await write("privacy/index.html", privacyPage());
+  await write("newsletter/index.html", newsletterPage());
   await write("404.html", notFoundPage());
   // Account pages are shells; the script fills them in for whoever is signed in.
   await write("login/index.html", loginPage());
@@ -65,7 +68,7 @@ export async function render(): Promise<number> {
   for (const d of all) {
     await write(`day/${d.date}/index.html`, dayPage(d));
     for (const s of d.stories) {
-      if (s.analysis && s.slug) await write(`story/${s.slug}/index.html`, storyPage(s, d.date));
+      if (s.analysis && s.slug) await write(`story/${s.slug}/index.html`, storyPage(s, d.date, d.generation));
     }
   }
 

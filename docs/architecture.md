@@ -54,8 +54,8 @@ services that need them.
 3. A failed source can be skipped; all sources failing or all summaries failing
    must fail the run without publishing an empty day.
 4. A published day is immutable to automatic retries. New editions are
-   written atomically. Dedupe reads the complete history even though homepage
-   rendering uses a smaller window.
+   written atomically. Dedupe and static rendering read the complete history;
+   only the homepage uses a smaller window, so saved old links remain valid.
 5. Email is sent only to confirmed addresses. A confirmation link is sent
    immediately when configured; sender retries share a database claim.
 6. Reset tokens are single-use and short-lived. Password reset revokes
@@ -95,11 +95,19 @@ services that need them.
   allows it; preserve the evidence text and citations in the edition. Do not
   claim full-text analysis when only an abstract was available.
 - Add a manual-review path for high-impact policy or safety claims.
-- Record model and prompt version in the JSON so an edition can be audited.
+- **Implemented:** model/prompt versions, per-source counts and failure names
+  in edition JSON; evidence disclosures on story pages; GitHub job summaries.
+- **Implemented:** independent mail job, read-only sender dry-run and visible
+  delivery failures.
+- A future transactional outbox should distinguish accepted deliveries from
+  in-flight attempts and recover stale claims after process crashes. Current
+  database claims prevent overlapping dispatch; an ambiguous provider timeout
+  can still require operator review.
 
 ### P2: Reader trust and reach
 
-- Add privacy and contact pages with the actual retention and deletion policy.
+- **Implemented:** privacy/data page and confirmation recovery page.
+- Add a contact route after an actual monitored support address is configured.
 - Add social preview images and visually inspect desktop and mobile pages in a
   real browser.
 - Add an export option before account deletion and an admin-independent,

@@ -1,10 +1,9 @@
 /**
  * The links inside an email: confirm and unsubscribe.
  *
- * A link is `<purpose>.<email>.<expiry>.<signature>`, signed with HMAC-SHA256
- * under NEWSAI_MAIL_SECRET. Nothing is stored to make one and nothing is
- * looked up to check one, which matters because the click may arrive days
- * later, from a mail client, with no session and no cookie.
+ * Signed links carry purpose, address and expiry. Confirmations also carry
+ * the current subscription generation, checked against the database on click.
+ * A deleted or unsubscribed address can never be restored by an old link.
  *
  * The purpose is inside the signed payload, so a confirm link cannot be filed
  * down into an unsubscribe link or the other way round. Unsubscribe links do
@@ -35,20 +34,21 @@ export function mailSecret(): string | null {
   return s && s.length >= 16 ? s : null;
 }
 
-export function makeToken(secret: string, purpose: Purpose, email: string): string {
+export function makeToken(secret: string, purpose: Purpose, email: string, generation?: string): string {
   const expires = purpose === "confirm" ? Date.now() + CONFIRM_DAYS * 86_400_000 : 0;
-  const payload = `${purpose}.${b64(email)}.${expires}`;
+  const payload = `${purpose}.${b64(email)}.${expires}${generation ? `.${generation}` : ""}`;
   return `${payload}.${sign(secret, payload)}`;
 }
 
 /** The email a valid token is for, or null. Never throws on malformed input. */
 export function readToken(secret: string, purpose: Purpose, token: string): string | null {
   const parts = token.split(".");
-  if (parts.length !== 4) return null;
-  const [p, e, exp, mac] = parts as [string, string, string, string];
+  if (parts.length !== 4 && parts.length !== 5) return null;
+  const [p, e, exp] = parts as [string, string, string];
+  const mac = parts[parts.length - 1]!;
   if (p !== purpose) return null;
 
-  const expected = Buffer.from(sign(secret, `${p}.${e}.${exp}`), "utf8");
+  const expected = Buffer.from(sign(secret, parts.slice(0, -1).join(".")), "utf8");
   const actual = Buffer.from(mac, "utf8");
   if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) return null;
 
@@ -64,8 +64,15 @@ export function readToken(secret: string, purpose: Purpose, token: string): stri
   }
 }
 
-export const confirmUrl = (site: string, secret: string, email: string): string =>
-  `${site}/api/mail/confirm?t=${encodeURIComponent(makeToken(secret, "confirm", email))}`;
+export function confirmationGeneration(secret: string, token: string): string | null {
+  if (!readToken(secret, "confirm", token)) return null;
+  const parts = token.split(".");
+  const generation = parts.length === 5 ? parts[3]! : "";
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(generation) ? generation : null;
+}
+
+export const confirmUrl = (site: string, secret: string, email: string, generation?: string): string =>
+  `${site}/api/mail/confirm?t=${encodeURIComponent(makeToken(secret, "confirm", email, generation))}`;
 
 export const unsubscribeUrl = (site: string, secret: string, email: string): string =>
   `${site}/api/mail/unsubscribe?t=${encodeURIComponent(makeToken(secret, "unsubscribe", email))}`;

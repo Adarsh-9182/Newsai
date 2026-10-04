@@ -8,6 +8,7 @@ import { Digest, Story } from "../types.js";
 import { shell, card, esc, longDate, shortDate, tagPill, safeUrl, saveButton, SITE_URL, SITE_NAME, TAGLINE } from "./layout.js";
 
 import { TAGS } from "../tags.js";
+import { summaryModel, analysisModel } from "../generation.js";
 
 export const ALL_TAGS = TAGS;
 
@@ -100,7 +101,7 @@ export function home(digests: readonly Digest[]): string {
 }
 
 /** One analysed story, as its own page. */
-export function storyPage(s: Story, date: string): string {
+export function storyPage(s: Story, date: string, generation?: Digest["generation"]): string {
   const a = s.analysis;
   if (!a || !s.slug) throw new Error(`storyPage needs an analysed, slugged story: ${s.id}`);
 
@@ -118,6 +119,12 @@ export function storyPage(s: Story, date: string): string {
     <a class="btn sm" href="${esc(safeUrl(s.url))}" rel="noopener noreferrer" target="_blank">Read the original &nearr;</a>
   </div>
   <p class="tldr">${esc(s.summary)}</p>
+  <details class="source-evidence"><summary>What the AI was shown</summary>
+    <p><strong>Source title:</strong> ${esc(s.title)}</p>
+    <p>${s.text?.trim() ? `<strong>Source description${s.text.length > 1200 ? " (display excerpt)" : ""}:</strong> ${esc(s.text.slice(0, 1200))}${s.text.length > 1200 ? "…" : ""}` : "No source description was available. This analysis is based on the title alone."}</p>
+    ${generation ? `<p>Summary model: ${esc(generation.summaryModel)}. Analysis model: ${esc(generation.analysisModel)}.</p>` : ""}
+    <a href="${esc(safeUrl(s.url))}" target="_blank" rel="noopener noreferrer">Verify at the original source &nearr;</a>
+  </details>
   <section class="sec what"><h2>What happened</h2><p>${esc(a.what)}</p></section>
   <section class="sec sowhat"><h2>Why it matters</h2><p>${esc(a.soWhat)}</p></section>
   <section class="sec caveats"><h2>What this doesn't show</h2><p>${esc(a.caveats)}</p></section>
@@ -217,7 +224,7 @@ export function aboutPage(): string {
   points and GitHub stars, normalized within each source and decayed by age. Source caps keep the edition varied. A model asked to score importance would be guessing at
   something that has already been counted.</p>
   <h2>What the model does</h2>
-  <p>It compresses. Gemini 3.1 Flash-Lite writes the one-line summary of every story and the long read
+  <p>It compresses. ${esc(summaryModel())} writes story summaries and ${esc(analysisModel())} writes the analysis
   for the few that earn it. Both are shown only the title and abstract, and are told they have not read the
   linked page and must not add a number, name or date that is not in front of them.</p>
   <p>The pipeline uses Google's free API tier. Only titles and text from public feeds are sent; Google's
@@ -233,6 +240,40 @@ export function aboutPage(): string {
   <p>No database. If a run goes wrong it is reverted like any other commit.</p>
 </main>`;
   return shell({ title: "How it works", description: "How newsai chooses, ranks and writes its stories.", path: "/about/", body });
+}
+
+export function privacyPage(): string {
+  const body = `<main class="narrow prose" style="padding-top:56px">
+  <h1>Your data on newsai</h1>
+  <p>You can read news without creating an account.</p>
+  <h2>Accounts and saved stories</h2>
+  <p>An account stores your email, optional name, password hash, followed topics and saved stories in the service's Postgres database. Your password is hashed with scrypt. A sign-in cookie keeps your session; the database holds a hash of that session token.</p>
+  <h2>Email</h2>
+  <p>Newsletter addresses are stored separately from accounts. The digest is sent only after email confirmation. Turn it off in your account or use the unsubscribe link in an email. Delivery uses Resend when configured; that service receives the recipient address and email content.</p>
+  <h2>AI and public sources</h2>
+  <p>The model receives public story titles and source descriptions. Account details, passwords and subscriber addresses are not included in model prompts. Public news editions are stored in the repository archive.</p>
+  <h2>Browser storage and hosting</h2>
+  <p>Your browser stores the selected theme and a cached account display so navigation can load quickly. Authentication still requires the server session cookie. Google Fonts receives font requests. Hosting and email services may keep their own operational request and delivery logs.</p>
+  <h2>Retention and deletion</h2>
+  <p>Account data stays until you delete your account. Reset tokens expire after 30 minutes and are replaced by a new reset request. Deleting an account removes its sessions, reset token, saved stories, preferences, newsletter row and send claims from the application database. Public news editions remain available.</p>
+  <p>Unsubscribing stops email; it retains an unsubscribed record. Service logs and database backups can have separate retention periods; deleting an account does not immediately erase those external records.</p>
+  <p><a href="/account/">Manage or delete your account</a> &middot; <a href="/newsletter/">Email confirmation help</a></p>
+  </main>`;
+  return shell({ title: "Your data", description: "What newsai stores and how to stop email or delete your account.", path: "/privacy/", body });
+}
+
+export function newsletterPage(): string {
+  const body = `<main class="narrow prose" style="padding-top:56px">
+  <h1>Need a fresh confirmation link?</h1>
+  <p>Already requested the newsletter? Enter the same email below to request a fresh link. Check spam too. Requests are limited to one per address per hour.</p>
+  <form class="inline-form" data-subscribe-resend novalidate>
+    <input class="input" type="email" name="email" placeholder="you@company.com" aria-label="Email address" autocomplete="email" required>
+    <button class="btn primary" type="submit">Request fresh link</button>
+  </form>
+  <p class="fineprint" role="status" data-subscribe-msg></p>
+  <p>If you unsubscribed, <a href="/">subscribe again from the homepage</a>. An old link cannot restore an unsubscribed or deleted subscription.</p>
+  </main>`;
+  return shell({ title: "Email confirmation help", description: "Request a fresh newsletter confirmation link.", path: "/newsletter/", body });
 }
 
 export function notFoundPage(): string {
@@ -394,7 +435,7 @@ ${items}
 
 export function sitemap(digests: readonly Digest[]): string {
   const urls = [
-    "/", "/archive/", "/about/",
+    "/", "/archive/", "/about/", "/privacy/", "/newsletter/",
     ...ALL_TAGS.map((t) => `/tag/${t}/`),
     ...digests.map((d) => `/day/${d.date}/`),
     ...flat(digests).filter((s) => s.analysis && s.slug).map((s) => `/story/${s.slug}/`),

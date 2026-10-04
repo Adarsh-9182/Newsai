@@ -185,6 +185,17 @@ export const APP_JS = String.raw`(function () {
   }
 
   // — newsletter —
+  $$("[data-subscribe-resend]").forEach(function (form) {
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var input = $("input", form), btn = $("button", form), msg = form.nextElementSibling;
+      if (!/^\S+@\S+\.\S+$/.test(input.value)) { msg.textContent = "Enter a valid email address."; return; }
+      btn.disabled = true;
+      api("POST", "/api/subscribe/resend", { email: input.value }).then(function (j) {
+        msg.textContent = j.delivery === "unavailable" ? "Email delivery is not available yet. Please try again later." : "If this address has an active subscription, a fresh link has been requested. Check your inbox.";
+      }).catch(function (err) { msg.textContent = err.message; }).then(function () { btn.disabled = false; });
+    });
+  });
   $$("[data-subscribe]").forEach(function (form) {
     var msg = form.nextElementSibling;
     form.addEventListener("submit", function (e) {

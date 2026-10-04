@@ -17,9 +17,9 @@
 
 import { Story, Analysis } from "./types.js";
 import { LanguageModel } from "./llm.js";
+import { analysisModel } from "./generation.js";
 
 /** Keep analysis on the same no-cost tier by default. */
-const DEFAULT_MODEL = "gemini-3.1-flash-lite";
 
 const SYSTEM = [
   "You write the analysis section of a daily AI newsletter read by engineers",
@@ -90,14 +90,14 @@ export async function analyseTop(
   depth: number,
   client: LanguageModel,
 ): Promise<{ stories: Story[]; usage: AnalysisUsage }> {
-  const model = process.env.NEWSAI_ANALYSIS_MODEL ?? DEFAULT_MODEL;
+  const model = analysisModel();
   const usage: AnalysisUsage = { inputTokens: 0, outputTokens: 0, requests: 0 };
   const out = [...stories];
 
   for (let i = 0; i < Math.min(depth, out.length); i++) {
     const s = out[i];
     if (!s) continue;
-    const prompt = `Title: ${s.title}\nSource: ${s.source}\n\n${s.text ?? s.summary}`;
+    const prompt = `Title: ${s.title}\nSource: ${s.source}\n\n${s.text?.trim() || "(No source description was provided. Only the title is evidence; do not infer details.)"}`;
     try {
       const response = await client.generate({
         model,

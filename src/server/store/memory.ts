@@ -12,7 +12,7 @@ export function memoryStore(): Store {
   const sessions = new Map<string, { userId: string; expiresAt: number }>();
   const resets = new Map<string, { tokenHash: string; expiresAt: number }>();
   const saves = new Map<string, Map<string, Save>>();
-  const subscribers = new Map<string, { confirmed: boolean; unsubscribed: boolean }>();
+  const subscribers = new Map<string, { confirmed: boolean; unsubscribed: boolean; generation: string }>();
   const sends = new Set<string>();
   const limits = new Map<string, { count: number; resetAt: number }>();
 
@@ -101,18 +101,25 @@ export function memoryStore(): Store {
     async subscribe(email) {
       const cur = subscribers.get(email);
       if (cur && !cur.unsubscribed) return cur.confirmed ? "confirmed" : "pending";
-      subscribers.set(email, { confirmed: false, unsubscribed: false });
+      subscribers.set(email, { confirmed: false, unsubscribed: false, generation: randomUUID() });
       // A fresh subscription earns exactly one confirmation email. Clearing the
       // claim here — and only here — is what stops an address that never
       // confirms from being mailed again every day.
       sends.delete(`${CONFIRM_CLAIM}|${email}`);
       return "new";
     },
-    async confirmSubscriber(email) {
-      subscribers.set(email, { confirmed: true, unsubscribed: false });
+    async confirmationGeneration(email) {
+      const cur = subscribers.get(email);
+      return cur && !cur.unsubscribed && !cur.confirmed ? cur.generation : null;
+    },
+    async confirmSubscriber(email, generation) {
+      const cur = subscribers.get(email);
+      if (!cur || cur.unsubscribed || (generation !== undefined && generation !== cur.generation)) return false;
+      subscribers.set(email, { ...cur, confirmed: true });
       const id = byEmail.get(email);
       const u = id ? users.get(id) : undefined;
       if (id && u) users.set(id, { ...u, digest: true });
+      return true;
     },
     async unsubscribe(email) {
       const cur = subscribers.get(email);

@@ -31,6 +31,7 @@ concurrency:
 jobs:
   digest:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # The `secrets` context cannot be read from a step's `if:`, so the one
     # question the send step asks — is mail configured at all? — is answered
     # here, where secrets are in scope.
@@ -56,6 +57,7 @@ jobs:
       - run: npm ci
 
       - name: Build the digest
+        id: build_digest
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           NEWSAI_MAX_STORIES: "25"
@@ -75,10 +77,35 @@ jobs:
             git push
           fi
 
-      # Sending is a separate step so a failure here can never lose the digest:
-      # the day's file is already committed above, and this step is safe to
-      # re-run — each address is claimed in the database before it is mailed.
-      - name: Send the digest
+      - name: Report digest failure
+        if: ${{ failure() }}
+        run: |
+          echo "## NewsAI digest failed" >> "$GITHUB_STEP_SUMMARY"
+          echo "No successful publication was completed by this run. Review the failed step and rerun after fixing its cause." >> "$GITHUB_STEP_SUMMARY"
+
+  mail:
+    needs: digest
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      MAIL_CONFIGURED: ${{ secrets.RESEND_API_KEY != '' && secrets.DATABASE_URL != '' && secrets.NEWSAI_MAIL_SECRET != '' }}
+    steps:
+      # Read the branch after the digest job so it includes the new edition.
+      - uses: actions/checkout@v4
+        if: ${{ env.MAIL_CONFIGURED == 'true' }}
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions/setup-node@v4
+        if: ${{ env.MAIL_CONFIGURED == 'true' }}
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+        if: ${{ env.MAIL_CONFIGURED == 'true' }}
+      - name: Send digest and retry pending confirmations
         if: ${{ env.MAIL_CONFIGURED == 'true' }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -86,3 +113,6 @@ jobs:
           NEWSAI_MAIL_SECRET: ${{ secrets.NEWSAI_MAIL_SECRET }}
           NEWSAI_SITE_URL: https://newsai.co.in
         run: npm run send
+      - name: Report mail configuration
+        if: ${{ env.MAIL_CONFIGURED != 'true' }}
+        run: echo "Mail delivery is disabled because its service credentials are incomplete." >> "$GITHUB_STEP_SUMMARY"

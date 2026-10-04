@@ -20,6 +20,7 @@ export interface Collection {
   readonly items: readonly RawItem[];
   /** Named so a broken source is visible in the log rather than just missing. */
   readonly failures: readonly string[];
+  readonly sourceCounts: Readonly<Record<string, number>>;
 }
 
 export async function collectAll(): Promise<Collection> {
@@ -33,11 +34,13 @@ export async function collectAll(): Promise<Collection> {
   const settled = await Promise.allSettled(jobs.map(([, p]) => p));
   const items: RawItem[] = [];
   const failures: string[] = [];
+  const sourceCounts: Record<string, number> = {};
 
   settled.forEach((r, i) => {
     const name = jobs[i]?.[0] ?? "unknown";
     if (r.status === "fulfilled") {
       items.push(...r.value);
+      sourceCounts[name] = r.value.length;
       console.log(`  ${name}: ${r.value.length}`);
     } else {
       failures.push(`${name}: ${r.reason}`);
@@ -48,5 +51,5 @@ export async function collectAll(): Promise<Collection> {
   if (items.length === 0) {
     throw new Error(`every source failed:\n${failures.join("\n")}`);
   }
-  return { items, failures };
+  return { items, failures, sourceCounts };
 }

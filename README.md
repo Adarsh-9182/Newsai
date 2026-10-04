@@ -164,8 +164,9 @@ Subscribing is **double opt-in**: an address is stored the moment someone asks,
 but the digest is only ever sent after the owner clicks a confirmation link, so
 nobody can sign up somebody else's inbox. Both links in an email — confirm and
 unsubscribe — are HMAC-signed with `NEWSAI_MAIL_SECRET` and carry their own
-purpose, so one cannot be edited into the other, and nothing is looked up to
-check them (the click arrives days later with no session). Confirmation links
+purpose, so one cannot be edited into the other. Confirmation also checks the
+current subscription version: an old link cannot undo unsubscribe or account
+deletion, or confirm a later subscription. Confirmation links
 expire after seven days; unsubscribe links never do, because an old newsletter
 must still work. Every digest carries `List-Unsubscribe` headers for one-click
 unsubscribe in Gmail and Outlook.
@@ -173,7 +174,11 @@ unsubscribe in Gmail and Outlook.
 A confirmation is sent **once per subscription**, never once a day: an address
 that is added and never confirmed is mailed a single time and then left alone,
 because it has consented to nothing. Unsubscribing and subscribing again counts
-as a new subscription and earns a fresh link.
+as a new subscription and earns a fresh link. `/newsletter/` lets a reader
+explicitly request a new confirmation link, limited to one per address per hour.
+The scheduled job never resends merely because a link expired. Older confirmation
+links without a subscription version are rejected; existing unsubscribe links
+continue to work.
 
 When `RESEND_API_KEY` and `NEWSAI_MAIL_SECRET` are configured on the API, the
 subscription request sends its confirmation immediately. The scheduled sender
@@ -191,9 +196,20 @@ This keeps research and lab updates in the mix without treating stars as votes.
 `npm run send` mails the day's digest to confirmed addresses, and is **safe to
 re-run**: each address is claimed in the database before it is mailed, so a
 crash halfway through a list does not mail the first half twice. Without
-`RESEND_API_KEY` it prints each email instead of sending it — that is the way
-to try the whole flow without mailing anyone. It refuses to run without
-`NEWSAI_MAIL_SECRET`, without `DATABASE_URL`, or with no digest for the day.
+`RESEND_API_KEY` it refuses real delivery. Use `npm run send -- --dry-run` to
+print previews without creating delivery claims; a dry-run cannot suppress a
+later real email. The sender requires `NEWSAI_MAIL_SECRET` and `DATABASE_URL`.
+Without a digest it still processes pending confirmations. Delivery failures
+produce a non-zero exit status and logs use recipient fingerprints rather than
+email addresses.
+
+New editions record model names, prompt versions, source counts and partial
+source failures. Story pages show the source title and an excerpt of the source
+description supplied to the model. Title-only stories never use a generated
+summary as evidence for further analysis. The daily workflow reports these
+counts in its job summary; its separate mail job runs even if the model job
+fails. Static rendering includes every archived edition so older bookmarks
+remain valid.
 
 The provider is [Resend](https://resend.com), reached with one `fetch` and no
 SDK; swapping it means writing another `Mailer` in `src/server/mailer.ts`.

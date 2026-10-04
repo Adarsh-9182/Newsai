@@ -19,9 +19,9 @@
 
 import { RawItem, Story } from "./types.js";
 import { LanguageModel } from "./llm.js";
+import { summaryModel } from "./generation.js";
 
 /** Free-tier stable model for high-volume compression. */
-const DEFAULT_MODEL = "gemini-3.1-flash-lite";
 /** Items per request. Large enough to amortise the instructions, small
  *  enough that one malformed reply costs a handful of stories, not the day. */
 const BATCH = 8;
@@ -99,9 +99,11 @@ async function summariseBatch(
   usage.outputTokens += response.outputTokens;
 
   const replies = parseReplies(response.text);
+  const indexed = replies.some((r) => r.i !== undefined);
   return batch.flatMap((item, n): Story[] => {
     // Match on the model's own index where it gave one, else by position.
-    const r = replies.find((x) => x.i === n + 1) ?? replies[n];
+    const matches = replies.filter((x) => x.i === n + 1);
+    const r = indexed ? (matches.length === 1 ? matches[0] : undefined) : replies[n];
     const summary = r?.summary?.trim();
     // A story the model did not return is dropped rather than published bare:
     // a card with no summary is worse than one fewer card.
@@ -121,7 +123,7 @@ export async function summarise(
   items: readonly RawItem[],
   client: LanguageModel,
 ): Promise<{ stories: Story[]; usage: SummaryUsage }> {
-  const model = process.env.NEWSAI_SUMMARY_MODEL ?? DEFAULT_MODEL;
+  const model = summaryModel();
   const usage: SummaryUsage = { inputTokens: 0, outputTokens: 0, requests: 0 };
   const stories: Story[] = [];
 

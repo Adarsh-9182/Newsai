@@ -136,29 +136,35 @@ export function postgresStore(db: Db): Store {
       return rows[0] ? toUser(rows[0]) : null;
     },
     async subscribe(email) {
-      const [row] = await db.query<{ confirmed_at: Date | null; unsubscribed_at: Date | null }>(
-        "select confirmed_at, unsubscribed_at from subscribers where email = $1",
-        [email],
+      const changed = await db.query<{ email: string }>(
+        `with fresh as (
+           insert into subscribers (email) values ($1)
+           on conflict (email) do update set confirmed_at = null, unsubscribed_at = null,
+             created_at = now(), generation = gen_random_uuid()
+           where subscribers.unsubscribed_at is not null
+           returning email
+         ), cleared as (
+           delete from digest_sends where date = $2 and email in (select email from fresh)
+         ) select email from fresh`, [email, CONFIRM_CLAIM],
       );
-      if (row && !row.unsubscribed_at) return row.confirmed_at ? "confirmed" : "pending";
-      await db.query(
-        `insert into subscribers (email) values ($1)
-         on conflict (email) do update set confirmed_at = null, unsubscribed_at = null, created_at = now()`,
-        [email],
-      );
-      // A fresh subscription earns exactly one confirmation email. Clearing the
-      // claim here — and only here — is what stops an address that never
-      // confirms from being mailed again every day.
-      await db.query("delete from digest_sends where date = $1 and email = $2", [CONFIRM_CLAIM, email]);
-      return "new";
+      if (changed.length) return "new";
+      const rows = await db.query<{ confirmed_at: Date | null }>("select confirmed_at from subscribers where email = $1", [email]);
+      return rows[0]?.confirmed_at ? "confirmed" : "pending";
     },
-    async confirmSubscriber(email) {
-      await db.query(
-        `insert into subscribers (email, confirmed_at) values ($1, now())
-         on conflict (email) do update set confirmed_at = now(), unsubscribed_at = null`,
-        [email],
+    async confirmationGeneration(email) {
+      const rows = await db.query<{ generation: string }>("select generation from subscribers where email = $1 and unsubscribed_at is null and confirmed_at is null", [email]);
+      return rows[0]?.generation ?? null;
+    },
+    async confirmSubscriber(email, generation) {
+      const rows = await db.query<{ email: string }>(
+        `with confirmed as (
+           update subscribers set confirmed_at = coalesce(confirmed_at, now())
+           where email = $1 and unsubscribed_at is null and ($2::uuid is null or generation = $2::uuid)
+           returning email
+         ), prefs as (update users set digest = true where email in (select email from confirmed))
+         select email from confirmed`, [email, generation ?? null],
       );
-      await db.query("update users set digest = true where email = $1", [email]);
+      return rows.length > 0;
     },
     async unsubscribe(email) {
       await db.query("update subscribers set unsubscribed_at = now() where email = $1 and unsubscribed_at is null", [email]);

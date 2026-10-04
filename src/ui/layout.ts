@@ -144,7 +144,7 @@ ${o.body}
   </div>
   <nav aria-label="Footer">
     <div><b>Read</b><a href="/">Today</a><a href="/archive/">Archive</a><a href="/tag/agents/">Agents</a><a href="/feed.xml">RSS</a></div>
-    <div><b>About</b><a href="/about/">How it works</a><a href="/sitemap.xml">Sitemap</a></div>
+    <div><b>About</b><a href="/about/">How it works</a><a href="/privacy/">Your data</a><a href="/newsletter/">Email help</a><a href="/sitemap.xml">Sitemap</a></div>
     <div><b>Account</b><a href="/login/">Sign in</a><a href="/signup/">Create account</a><a href="/account/">Saved stories</a></div>
   </nav>
 </div></footer>

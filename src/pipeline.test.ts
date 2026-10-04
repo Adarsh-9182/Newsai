@@ -38,7 +38,7 @@ test("rerunning a published day preserves its edition without source or model re
   }
 });
 
-test("public archive stays bounded while pipeline dedupe keeps the full history", async () => {
+test("bounded archive reads coexist with full history for rendering and dedupe", async () => {
   const dir = await mkdtemp(join(tmpdir(), "newsai-history-"));
   try {
     const date = new Date(Date.now() - 800 * 86_400_000);
@@ -48,7 +48,7 @@ test("public archive stays bounded while pipeline dedupe keeps the full history"
       await writeFile(join(dir, `${day}.json`), JSON.stringify({ ...edition, date: day, stories: [] }));
     }
     const { readArchive, readArchiveAll } = await import("./archive.js");
-    assert.equal((await readArchive(400, dir)).length, 400, "site keeps its bounded render window");
+    assert.equal((await readArchive(400, dir)).length, 400, "recent views can request a bounded window");
     const complete = await readArchiveAll(dir);
     assert.equal(complete.length, 405, "pipeline reads older editions for dedupe");
     assert.ok(complete[404]!.date < complete[399]!.date, "the oldest edition remains available to dedupe");

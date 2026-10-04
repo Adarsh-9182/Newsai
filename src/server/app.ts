@@ -19,7 +19,7 @@
 import { Store, User } from "./types.js";
 import { TAGS } from "../tags.js";
 import { hashPassword, verifyPassword, DUMMY_HASH, newToken, hashToken } from "./crypto.js";
-import { mailSecret, readToken } from "./maillink.js";
+import { mailSecret, readToken, confirmationGeneration } from "./maillink.js";
 import { Mailer, resendMailer } from "./mailer.js";
 import { sendConfirmation } from "./confirmation.js";
 
@@ -257,6 +257,15 @@ export async function handle(req: Request, store: Store | null, options: AppOpti
     }
 
     // — newsletter, no account needed —
+    if (path === "/api/subscribe/resend" && method === "POST") {
+      const addr = email((await body(req)).email);
+      if (!(await store.hit(`resend-ip:${ip}`, 5, 3600)) || !(await store.hit(`resend:${addr}`, 1, 3600))) {
+        throw new HttpError(429, "rate_limited", "A confirmation was recently requested. Try again in an hour.");
+      }
+      if (!secret || !mailer) return json(200, { ok: true, delivery: "unavailable" });
+      try { await sendConfirmation(store, addr, site, secret, mailer, true); } catch { /* retry through a later explicit request */ }
+      return json(200, { ok: true, delivery: "requested" });
+    }
     if (path === "/api/subscribe" && method === "POST") {
       if (!(await store.hit(`sub:${ip}`, 10, 3600))) throw new HttpError(429, "rate_limited", "Too many requests.");
       const addr = email((await body(req)).email);
@@ -275,10 +284,13 @@ export async function handle(req: Request, store: Store | null, options: AppOpti
       const purpose = path.endsWith("confirm") ? "confirm" : "unsubscribe";
       const addr = secret ? readToken(secret, purpose, url.searchParams.get("t") ?? "") : null;
       if (!addr) {
-        return page(400, "This link is no longer valid", "Confirmation links expire after seven days. Ask for a new one from the site and we'll send a fresh link.");
+        return page(400, "This link is no longer valid", 'Confirmation links expire after seven days. <a href="/newsletter/">Request a fresh confirmation link</a>.');
       }
       if (purpose === "confirm") {
-        await store.confirmSubscriber(addr);
+        const generation = secret ? confirmationGeneration(secret, url.searchParams.get("t") ?? "") : null;
+        if (!generation || !(await store.confirmSubscriber(addr, generation))) {
+          return page(400, "This subscription has changed", 'This link belongs to an older subscription. <a href="/newsletter/">Request a fresh link</a> or subscribe again from the homepage.');
+        }
         return page(200, "You're subscribed", "The next digest lands at 07:00 IST. Every email has an unsubscribe link at the bottom.");
       }
       await store.unsubscribe(addr);

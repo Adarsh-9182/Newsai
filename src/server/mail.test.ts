@@ -69,6 +69,58 @@ describe("signed mail links", () => {
 
 for (const [label, make] of [["memory", async () => memoryStore()], ["postgres (PGlite)", pgStore]] as const) {
   describe(`mailing list — ${label}`, () => {
+    test("confirmation cannot resurrect an unsubscribed, replaced or deleted subscription", async () => {
+      const store = await make();
+      process.env.NEWSAI_MAIL_SECRET = SECRET;
+      await store.subscribe("ada@example.com");
+      const old = confirmUrl("", SECRET, "ada@example.com", (await store.confirmationGeneration("ada@example.com"))!);
+      await store.unsubscribe("ada@example.com");
+      assert.equal((await get(old, store)).status, 400);
+      assert.deepEqual(await store.confirmedRecipients(), []);
+      await store.subscribe("ada@example.com");
+      assert.equal((await get(old, store)).status, 400, "re-enrolling rotates the subscription version");
+      const fresh = confirmUrl("", SECRET, "ada@example.com", (await store.confirmationGeneration("ada@example.com"))!);
+      assert.equal((await get(fresh, store)).status, 200);
+      const user = await store.createUser({ email: "ada@example.com", name: "Ada", passwordHash: "test" });
+      await store.deleteAccount(user!.id);
+      assert.equal((await get(fresh, store)).status, 400);
+      assert.deepEqual(await store.confirmedRecipients(), []);
+    });
+
+    test("concurrent subscriptions preserve a single generation", async () => {
+      const store = await make();
+      const statuses = await Promise.all([store.subscribe("ada@example.com"), store.subscribe("ada@example.com")]);
+      assert.equal(statuses.filter((s) => s === "new").length, 1);
+      const generation = await store.confirmationGeneration("ada@example.com");
+      await store.subscribe("ada@example.com");
+      assert.equal(await store.confirmationGeneration("ada@example.com"), generation);
+    });
+
+    test("fresh confirmation requests are rate limited and work after the first link expires", async () => {
+      const store = await make();
+      const mails: Mail[] = [];
+      const options = { mailSecret: SECRET, mailer: { name: "test", send: async (mail: Mail) => { mails.push(mail); } } };
+      await store.subscribe("ada@example.com");
+      await sendConfirmation(store, "ada@example.com", ORIGIN, SECRET, options.mailer);
+      const generation = (await store.confirmationGeneration("ada@example.com"))!;
+      const originalNow = Date.now;
+      let expired = "";
+      try {
+        Date.now = () => originalNow() - 8 * 86_400_000;
+        expired = confirmUrl("", SECRET, "ada@example.com", generation);
+      } finally { Date.now = originalNow; }
+      assert.equal((await handle(new Request(ORIGIN + expired), store, options)).status, 400);
+      const request = () => handle(new Request(`${ORIGIN}/api/subscribe/resend`, {
+        method: "POST", headers: { host: "localhost:3000", origin: ORIGIN, "content-type": "application/json" },
+        body: JSON.stringify({ email: "ada@example.com" }),
+      }), store, options);
+      assert.equal((await request()).status, 200);
+      assert.equal(mails.length, 2);
+      const link = new URL(mails[1]!.text.match(/https?:\/\/\S+/)![0]);
+      assert.equal((await handle(new Request(link), store, options)).status, 200);
+      assert.equal((await request()).status, 429);
+    });
+
     test("creating an account preserves an existing confirmed subscription", async () => {
       const store = await make();
       await store.subscribe("ada@example.com");
@@ -113,7 +165,7 @@ for (const [label, make] of [["memory", async () => memoryStore()], ["postgres (
       assert.equal(sent.length, 1);
       assert.deepEqual(await store.pendingSubscribers(), ["ada@example.com"]);
       process.env.NEWSAI_MAIL_SECRET = SECRET;
-      await get(confirmUrl("", SECRET, "ada@example.com"), store);
+      await get(confirmUrl("", SECRET, "ada@example.com", (await store.confirmationGeneration("ada@example.com"))!), store);
       assert.deepEqual(await store.confirmedRecipients(), ["ada@example.com"]);
       assert.equal((await store.userByEmail("ada@example.com"))!.digest, true);
       await prefs(false);
@@ -134,7 +186,7 @@ for (const [label, make] of [["memory", async () => memoryStore()], ["postgres (
       assert.deepEqual(await store.pendingSubscribers(), ["ada@example.com"]);
       assert.deepEqual(await store.confirmedRecipients(), [], "unconfirmed addresses are never mailed the digest");
 
-      const link = confirmUrl("", SECRET, "ada@example.com");
+      const link = confirmUrl("", SECRET, "ada@example.com", (await store.confirmationGeneration("ada@example.com"))!);
       const res = await get(link, store);
       assert.equal(res.status, 200);
       assert.match(res.headers.get("content-type") ?? "", /text\/html/);

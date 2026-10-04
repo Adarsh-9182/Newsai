@@ -80,7 +80,9 @@ export interface Store {
    * never confirmed), or "confirmed" (nothing more to do).
    */
   subscribe(email: string): Promise<SubscriberStatus>;
-  confirmSubscriber(email: string): Promise<void>;
+  /** Active, unconfirmed subscription version; confirmed or unsubscribed addresses need no link. */
+  confirmationGeneration(email: string): Promise<string | null>;
+  confirmSubscriber(email: string, generation?: string): Promise<boolean>;
   /** Stops all mail to the address, and switches the digest off on any account using it. */
   unsubscribe(email: string): Promise<void>;
   pendingSubscribers(): Promise<string[]>;

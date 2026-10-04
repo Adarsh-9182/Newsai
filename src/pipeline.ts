@@ -16,8 +16,10 @@ import { collectAll } from "./sources/index.js";
 import { dedupeWithin, dropAlreadyPublished } from "./dedupe.js";
 import { summarise } from "./summarize.js";
 import { analyseTop } from "./analyse.js";
-import { readArchive, readArchiveAll, writeDigest, today } from "./archive.js";
+import { readArchiveAll, writeDigest, today } from "./archive.js";
 import { selectStories } from "./rank.js";
+import { summaryModel, analysisModel, SUMMARY_PROMPT_VERSION, ANALYSIS_PROMPT_VERSION } from "./generation.js";
+import { appendFile } from "node:fs/promises";
 
 /** Hard ceiling on a run, so a busy news day cannot cost a surprising amount. */
 const DEFAULT_MAX = 25;
@@ -71,7 +73,7 @@ export async function runPipeline(client?: LanguageModel): Promise<Digest> {
   }
 
   console.log("Collecting…");
-  const { items } = await collectAll();
+  const { items, failures, sourceCounts } = await collectAll();
   console.log(`  ${items.length} raw items`);
 
   const fresh = dedupeWithin(items);
@@ -95,6 +97,12 @@ export async function runPipeline(client?: LanguageModel): Promise<Digest> {
   const digest: Digest = {
     date,
     generatedAt: new Date().toISOString(),
+    generation: {
+      summaryModel: summaryModel(), analysisModel: analysisModel(),
+      summaryPromptVersion: SUMMARY_PROMPT_VERSION, analysisPromptVersion: ANALYSIS_PROMPT_VERSION,
+      sourceCounts, sourceFailures: failures.map((failure) => failure.split(":")[0]!),
+      collected: items.length, selected: chosen.length, summarized: stories.length,
+    },
     // Preserve the ranking the sources earned; the summariser may drop items
     // but must never reorder them.
     stories: deep.map((s) => ({ ...s, slug: slugify(s.title, s.id) })),
@@ -119,7 +127,14 @@ export async function runPipeline(client?: LanguageModel): Promise<Digest> {
 
 // Run when invoked directly, not when imported by a test.
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop() ?? "")) {
-  runPipeline().catch((err) => {
+  runPipeline().then(async (digest) => {
+    if (process.env.GITHUB_STEP_SUMMARY) {
+      const g = digest.generation;
+      const summary = `## NewsAI edition ${digest.date}\n\nPublished stories: ${digest.stories.length}\n\n` +
+        (g ? `Collected: ${g.collected}; selected: ${g.selected}; summarized: ${g.summarized}\n\nModels: ${g.summaryModel} / ${g.analysisModel}\n\n| Source | Items |\n|---|---:|\n${Object.entries(g.sourceCounts).map(([name, count]) => `| ${name} | ${count} |`).join("\n")}\n\nSource failures: ${g.sourceFailures.join(", ") || "none"}\n` : "Existing edition kept; no model calls were made.\n");
+      await appendFile(process.env.GITHUB_STEP_SUMMARY, summary);
+    }
+  }).catch((err) => {
     console.error(err);
     process.exit(1);
   });

@@ -56,6 +56,7 @@ create table if not exists subscribers (
 );
 alter table subscribers add column if not exists confirmed_at timestamptz;
 alter table subscribers add column if not exists unsubscribed_at timestamptz;
+alter table subscribers add column if not exists generation uuid not null default gen_random_uuid();
 
 create table if not exists digest_sends (
   date    text not null,
